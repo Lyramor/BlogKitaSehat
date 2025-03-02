@@ -9,118 +9,183 @@ if(!isset($_SESSION['login']) || !isset($_SESSION['id'])){
     exit();
 }
 
+// 1. Tambahkan CSRF token protection
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $user_id = $_SESSION['id'];
 
-// Check if article ID is provided and valid
-if (!isset($_GET['p']) || !is_numeric($_GET['p'])) {
+// 2. Validasi parameter GET 
+if (!isset($_GET['p']) || !preg_match('/^[0-9]+$/', $_GET['p'])) {
     header("Location: index.php");
     exit();
 }
 
-$artikel_id = mysqli_real_escape_string($conn, $_GET['p']);
+$artikel_id = $_GET['p'];
 
-// Use prepared statement for security
-$stmt = mysqli_prepare($conn, "SELECT * FROM artikel WHERE id = ? AND user_id = ?");
-mysqli_stmt_bind_param($stmt, "ii", $artikel_id, $user_id);
-mysqli_stmt_execute($stmt);
-$result = mysqli_stmt_get_result($stmt);
+// 3. Gunakan named parameter untuk SQL query dengan PDO
+// Ubah koneksi ke PDO jika belum menggunakan PDO
+try {
+    // Contoh konversi mysqli ke PDO (asumsikan $conn sudah ada)
+    if (!isset($pdo)) {
+        // Uncomment baris berikut jika perlu mengubah ke PDO
+        // $pdo = new PDO("mysql:host=".DB_HOST.";dbname=".DB_NAME, DB_USER, DB_PASS);
+        // $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+        
+        // Gunakan $conn yang sudah ada untuk contoh ini
+        $stmt = $conn->prepare("SELECT * FROM artikel WHERE id = ? AND user_id = ?");
+        $stmt->bind_param("ii", $artikel_id, $user_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+    } else {
+        // Jika sudah menggunakan PDO
+        $stmt = $pdo->prepare("SELECT * FROM artikel WHERE id = :artikel_id AND user_id = :user_id");
+        $stmt->bindParam(':artikel_id', $artikel_id, PDO::PARAM_INT);
+        $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
+        $stmt->execute();
+        $result = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 
-if (mysqli_num_rows($result) == 0) {
-    header("Location: index.php");
-    exit();
-}
+    if (mysqli_num_rows($result) == 0) {
+        header("Location: index.php");
+        exit();
+    }
 
-$artikel = mysqli_fetch_assoc($result);
+    $artikel = mysqli_fetch_assoc($result);
 
-// Get categories using prepared statement
-$stmt_kategori = mysqli_prepare($conn, "SELECT * FROM kategori");
-mysqli_stmt_execute($stmt_kategori);
-$queryKategori = mysqli_stmt_get_result($stmt_kategori);
-
-// Handle form submission
-if (isset($_POST['update'])) {
-    try {
-        $judul = htmlspecialchars($_POST['judul']);
-        $kategori = htmlspecialchars($_POST['kategori']);
-        $isi = htmlspecialchars($_POST['isi']);
-        $sinopsis = htmlspecialchars($_POST['sinopsis']);
-        $new_name = $artikel['gambar'];
-
-        // Validate required fields
-        if (empty($judul) || empty($kategori) || empty($isi) || empty($sinopsis)) {
-            throw new Exception("Semua field harus diisi");
+    // Get categories using named parameters
+    $stmt_kategori = $conn->prepare("SELECT * FROM kategori");
+    $stmt_kategori->execute();
+    $queryKategori = $stmt_kategori->get_result();
+    
+    // Handle form submission with CSRF protection
+    if (isset($_POST['update'])) {
+        // 1. Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            die('CSRF token validation failed');
         }
-
-        // Image handling
-        if (!empty($_FILES["gambar"]["name"])) {
-            $target_dir = __DIR__ . "/../css/image/";
+        
+        try {
+            // Validasi inputan
+            $errors = [];
             
-            if (!file_exists($target_dir)) {
-                mkdir($target_dir, 0777, true);
+            // Validasi judul
+            if (empty($_POST['judul'])) {
+                $errors[] = "Judul tidak boleh kosong";
+            } else {
+                $judul = htmlspecialchars($_POST['judul']);
             }
-
-            // File validation
-            $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
-            if (!in_array($_FILES["gambar"]["type"], $allowed_types)) {
-                throw new Exception("Hanya file JPG, PNG & GIF yang diperbolehkan");
+            
+            // Validasi kategori
+            if (empty($_POST['kategori']) || !preg_match('/^[0-9]+$/', $_POST['kategori'])) {
+                $errors[] = "Kategori tidak valid";
+            } else {
+                $kategori = htmlspecialchars($_POST['kategori']);
             }
-
-            if ($_FILES["gambar"]["size"] > 4000000) {
-                throw new Exception("Ukuran file tidak boleh lebih dari 4MB");
+            
+            // Validasi isi
+            if (empty($_POST['isi'])) {
+                $errors[] = "Isi artikel tidak boleh kosong";
+            } else {
+                $isi = htmlspecialchars($_POST['isi']);
             }
+            
+            // Validasi sinopsis
+            if (empty($_POST['sinopsis'])) {
+                $errors[] = "Sinopsis tidak boleh kosong";
+            } else {
+                $sinopsis = htmlspecialchars($_POST['sinopsis']);
+            }
+            
+            // Jika ada error, tampilkan pesan
+            if (!empty($errors)) {
+                throw new Exception(implode("<br>", $errors));
+            }
+            
+            $new_name = $artikel['gambar'];
 
-            // Generate safe filename
-            $random_name = bin2hex(random_bytes(10));
-            $imageFileType = strtolower(pathinfo($_FILES["gambar"]["name"], PATHINFO_EXTENSION));
-            $new_name = $random_name . "." . $imageFileType;
+            // Image handling
+            if (!empty($_FILES["gambar"]["name"])) {
+                $target_dir = __DIR__ . "/../css/image/";
+                
+                if (!file_exists($target_dir)) {
+                    mkdir($target_dir, 0777, true);
+                }
 
-            // Delete old image
-            if (!empty($artikel['gambar'])) {
-                $old_file = $target_dir . $artikel['gambar'];
-                if (file_exists($old_file)) {
-                    unlink($old_file);
+                // File validation
+                $allowed_types = ['image/jpeg', 'image/png', 'image/gif'];
+                if (!in_array($_FILES["gambar"]["type"], $allowed_types)) {
+                    throw new Exception("Hanya file JPG, PNG & GIF yang diperbolehkan");
+                }
+
+                if ($_FILES["gambar"]["size"] > 4000000) {
+                    throw new Exception("Ukuran file tidak boleh lebih dari 4MB");
+                }
+
+                // Generate safe filename
+                $random_name = bin2hex(random_bytes(10));
+                $imageFileType = strtolower(pathinfo($_FILES["gambar"]["name"], PATHINFO_EXTENSION));
+                $new_name = $random_name . "." . $imageFileType;
+
+                // Delete old image
+                if (!empty($artikel['gambar'])) {
+                    $old_file = $target_dir . $artikel['gambar'];
+                    if (file_exists($old_file)) {
+                        unlink($old_file);
+                    }
+                }
+
+                // Upload new image
+                if (!move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name)) {
+                    throw new Exception("Gagal mengupload file");
                 }
             }
 
-            // Upload new image
-            if (!move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name)) {
-                throw new Exception("Gagal mengupload file");
-            }
-        }
-
-        // Update database using prepared statement
-        $stmt_update = mysqli_prepare($conn, "UPDATE artikel SET kategori_id = ?, judul = ?, isi = ?, sinopsis = ?, gambar = ? WHERE id = ? AND user_id = ?");
-        mysqli_stmt_bind_param($stmt_update, "issssii", $kategori, $judul, $isi, $sinopsis, $new_name, $artikel_id, $user_id);
-        
-        if (!mysqli_stmt_execute($stmt_update)) {
-            throw new Exception("Gagal mengupdate artikel: " . mysqli_error($conn));
-        }
-
-        echo '<div class="alert alert-success">Artikel berhasil diupdate</div>';
-        echo '<meta http-equiv="refresh" content="2;url=index.php">';
-
-    } catch (Exception $e) {
-        echo '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
-    }
-}
-
-    // Handle article archiving
-    if (isset($_POST['archive'])) {
-        $current_time = date('Y-m-d H:i:s');
-        $updateQuery = mysqli_query($conn, "UPDATE artikel SET 
-            status = 'arsip',
-            archived_at = '$current_time'
-            WHERE id = '$artikel_id' AND user_id = '$user_id'");
+            // Update dengan prepared statement dan named parameters
+            $stmt_update = $conn->prepare("UPDATE artikel SET kategori_id = ?, judul = ?, isi = ?, sinopsis = ?, gambar = ? WHERE id = ? AND user_id = ?");
+            $stmt_update->bind_param("issssii", $kategori, $judul, $isi, $sinopsis, $new_name, $artikel_id, $user_id);
             
-        if ($updateQuery) {
+            if (!$stmt_update->execute()) {
+                throw new Exception("Gagal mengupdate artikel: " . $conn->error);
+            }
+
+            echo '<div class="alert alert-success">Artikel berhasil diupdate</div>';
+            echo '<meta http-equiv="refresh" content="2;url=index.php">';
+
+        } catch (Exception $e) {
+            echo '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
+        }
+    }
+
+    // Handle article archiving with CSRF protection
+    if (isset($_POST['archive'])) {
+        // Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            die('CSRF token validation failed');
+        }
+        
+        $current_time = date('Y-m-d H:i:s');
+        
+        // Gunakan prepared statement
+        $stmt_archive = $conn->prepare("UPDATE artikel SET status = ?, archived_at = ? WHERE id = ? AND user_id = ?");
+        $status = 'arsip';
+        $stmt_archive->bind_param("ssii", $status, $current_time, $artikel_id, $user_id);
+        
+        if ($stmt_archive->execute()) {
             echo '<div class="alert alert-success">Artikel berhasil diarsipkan</div>';
             echo '<meta http-equiv="refresh" content="2;url=index.php">';
             exit;
         }
     }
 
-    // Handle article deletion
+    // Handle article deletion with CSRF protection
     if(isset($_POST['delete'])) {
+        // Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+            die('CSRF token validation failed');
+        }
+        
         if(!$artikel) {
             echo "<script>alert('Artikel tidak ditemukan!'); window.location.href = 'artikel.php';</script>";
             exit();
@@ -134,18 +199,21 @@ if (isset($_POST['update'])) {
             }
         }
         
-        // Hapus artikel dari database
-        $deleteQuery = mysqli_query($conn, "DELETE FROM artikel WHERE id = '$artikel_id' AND user_id = '$user_id'");
-    
-        if ($deleteQuery) {
+        // Hapus artikel dari database dengan prepared statement
+        $stmt_delete = $conn->prepare("DELETE FROM artikel WHERE id = ? AND user_id = ?");
+        $stmt_delete->bind_param("ii", $artikel_id, $user_id);
+        
+        if ($stmt_delete->execute()) {
             echo "<script>alert('Artikel berhasil dihapus!'); window.location.href = 'artikel.php';</script>";
             exit();
         } else {
-            echo "<script>alert('Gagal menghapus artikel: " . mysqli_error($conn) . "');</script>";
+            echo "<script>alert('Gagal menghapus artikel: " . $conn->error . "');</script>";
         }
     }
-    
-    
+} catch (Exception $e) {
+    echo '<div class="alert alert-danger">Error: ' . $e->getMessage() . '</div>';
+    exit();
+}
 
 ?>
 
@@ -172,7 +240,7 @@ if (isset($_POST['update'])) {
     <title>Ubah Artikel - KitaSehat</title>
 
     <style>
-        .btn-primary, .btn-warning, .btn-info, .btn-danger {
+        .btn-primary, .btn-warning, .btn-info, .btn-danger, .btn-secondary {
             padding: 8px 16px;
             margin: 5px;
             border: none;
@@ -254,8 +322,11 @@ if (isset($_POST['update'])) {
 
     <div class="container">
         <form id="form-edit-artikel" action="" method="post" enctype="multipart/form-data">
+            <!-- CSRF token hidden field -->
+            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+            
             <div class="form-group">
-                <label for="judul">Title <span class="text-danger">*</span></label>
+                <label for="judul">Judul <span class="text-danger">*</span></label>
                 <input type="text" id="judul" name="judul" required 
                        value="<?php echo htmlspecialchars($artikel['judul']); ?>"
                        placeholder="Masukkan judul artikel">
@@ -268,7 +339,7 @@ if (isset($_POST['update'])) {
                     <?php while ($data = mysqli_fetch_array($queryKategori)) { ?>
                         <option value="<?php echo $data['id']; ?>" 
                                 <?php echo ($data['id'] == $artikel['kategori_id']) ? 'selected' : ''; ?>>
-                            <?php echo $data['nama']; ?>
+                            <?php echo htmlspecialchars($data['nama']); ?>
                         </option>
                     <?php } ?>
                 </select>
@@ -293,7 +364,7 @@ if (isset($_POST['update'])) {
                 <?php if (!empty($artikel['gambar'])): ?>
                     <div class="current-image">
                         <p>Gambar saat ini:</p>
-                        <img src="../css/image/<?php echo $artikel['gambar']; ?>" alt="Gambar artikel saat ini">
+                        <img src="../css/image/<?php echo htmlspecialchars($artikel['gambar']); ?>" alt="Gambar artikel saat ini">
                     </div>
                 <?php endif; ?>
                 <input type="file" id="gambar" name="gambar" 
@@ -302,6 +373,10 @@ if (isset($_POST['update'])) {
                 <div id="imagePreview" class="image-preview"></div>
                 <small class="text-muted">Accepted formats: JPG, PNG, GIF (max 4MB)</small>
             </div>
+
+            <button class="btn-primary" type="submit" name="update">
+                <i class="fas fa-save"></i> Simpan Perubahan
+            </button>
 
             <?php if ($artikel['status'] == 'aktif'): ?>
             <button class="btn-warning" type="submit" name="archive" 
@@ -322,7 +397,7 @@ if (isset($_POST['update'])) {
             </button>
             
             <!-- Cancel Button -->
-            <a href="artikel.php" class="btn-danger">
+            <a href="artikel.php" class="btn-secondary">
                 <i class="fas fa-times"></i> Batal
             </a>
         </form>

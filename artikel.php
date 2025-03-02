@@ -1,29 +1,42 @@
-<?php  
+<?php
 require "inc/koneksi.php";
 
-// Mengambil data artikel dari tabel "artikel"
-$queryArtikel = mysqli_query($conn, "SELECT id, judul, gambar, sinopsis FROM artikel");
+// Initialize query with proper JOIN
+$baseQuery = "SELECT a.id, a.judul, a.gambar, a.sinopsis, k.nama as kategori_nama 
+              FROM artikel a 
+              LEFT JOIN kategori k ON a.kategori_id = k.id 
+              WHERE a.status = 'aktif'";
 
-// Mengambil data kategori dari tabel "kategori"
-$queryKategori = mysqli_query($conn, "SELECT * FROM kategori");
-
-
-// Cek apakah terdapat pencarian berdasarkan kata kunci (keyword)
-if (isset($_GET['keyword'])) {
-  $keyword = $_GET['keyword'];
-  $queryArtikel = mysqli_query($conn, "SELECT * FROM artikel WHERE judul LIKE '%$keyword%'");
+// Handle search functionality
+if (isset($_GET['keyword']) && !empty($_GET['keyword'])) {
+    $keyword = mysqli_real_escape_string($conn, $_GET['keyword']);
+    $queryArtikel = $baseQuery . " AND (a.judul LIKE '%$keyword%' OR a.sinopsis LIKE '%$keyword%')";
+} 
+// Handle category filtering
+else if (isset($_GET['kategori']) && !empty($_GET['kategori'])) {
+    $kategori = mysqli_real_escape_string($conn, $_GET['kategori']);
+    $queryArtikel = $baseQuery . " AND k.nama = '$kategori'";
+} 
+// Default query without filters
+else {
+    $queryArtikel = $baseQuery;
 }
-// Cek apakah terdapat pencarian berdasarkan kategori
-  else if (isset($_GET['kategori'])) {
-    $kategori = $_GET['kategori'];
-    $queryGetKategoriId = mysqli_query($conn, "SELECT id FROM kategori WHERE nama='$kategori'");
-    $kategoriId = mysqli_fetch_array($queryGetKategoriId);
-    $queryArtikel = mysqli_query($conn, "SELECT * FROM artikel WHERE kategori_id='$kategoriId[id]'");
-  }
 
-$countData = mysqli_num_rows($queryArtikel);
+// Execute article query
+$resultArtikel = mysqli_query($conn, $queryArtikel);
+if (!$resultArtikel) {
+    die("Query Error: " . mysqli_error($conn));
+}
+
+// Get categories for the filter menu
+$queryKategori = "SELECT * FROM kategori ORDER BY nama ASC";
+$resultKategori = mysqli_query($conn, $queryKategori);
+if (!$resultKategori) {
+    die("Query Error: " . mysqli_error($conn));
+}
+
+$countData = mysqli_num_rows($resultArtikel);
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 
@@ -38,8 +51,8 @@ $countData = mysqli_num_rows($queryArtikel);
     crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <!-- css -->
-  <link rel="stylesheet" href="css/style3.css">
-  <link rel="stylesheet" href="css/artikel.css">
+  <link rel="stylesheet" href="css/style2.css">
+  <link rel="stylesheet" href="css/artikel1.css">
 
   <title>KitaSehat | Artikel lainnya</title>
 </head>
@@ -70,7 +83,7 @@ $countData = mysqli_num_rows($queryArtikel);
       if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
           // Periksa apakah ada role yang diset dalam session
           if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
-              echo '<a href="postingan.php">Postingan</a>';
+              echo '<a href="postingan/">Postingan</a>';
           }
           
           echo '<a href="profile.php" id="login">Profile</a>';
@@ -95,7 +108,7 @@ $countData = mysqli_num_rows($queryArtikel);
   </section>
 
   <div class="kategori">
-    <?php while ($kategori = mysqli_fetch_array($queryKategori)) { ?>
+    <?php while ($kategori = mysqli_fetch_array($resultKategori)) { ?>
       <a href="artikel.php?kategori=<?php echo $kategori['nama']; ?>" class="sub-kategori">
         <?php echo $kategori['nama']; ?>
       </a>
@@ -113,18 +126,26 @@ $countData = mysqli_num_rows($queryArtikel);
   <?php } ?>
 
   <div class="lainnya" id="resultContainer">
-    <?php while ($data = mysqli_fetch_array($queryArtikel)) { ?>
-      <div class="lainnya-page">
-        <div class="lainnya-img">
-          <img src="css/image/<?php echo $data['gambar']; ?>" alt="">
-        </div>
-        <div class="content">
-          <h3><?php echo $data['judul']; ?></h3>
-          <p><?php echo $data['sinopsis']; ?></p>
-          <a href="artikel-detail.php?judul=<?php echo $data['judul']; ?>">Baca Selengkapnya...</a>
-        </div>
-      </div>
-    <?php } ?>
+    <?php if ($countData < 1) { ?>
+        <h4 style="text-align: center; padding: 2rem;">Artikel yang anda cari tidak tersedia</h4>
+    <?php } else { 
+        while ($data = mysqli_fetch_array($resultArtikel)) { ?>
+            <div class="lainnya-page">
+                <div class="lainnya-img">
+                    <?php if (!empty($data['gambar']) && file_exists("css/image/" . $data['gambar'])) { ?>
+                        <img src="css/image/<?php echo $data['gambar']; ?>" alt="">
+                    <?php } else { ?>
+                        <img src="css/image/default.jpg" alt="">
+                    <?php } ?>
+                </div>
+                <div class="content">
+                    <h3><?php echo $data['judul']; ?></h3>
+                    <p><?php echo $data['sinopsis']; ?></p>
+                    <a href="artikel-detail.php?judul=<?php echo $data['judul']; ?>">Baca Selengkapnya...</a>
+                </div>
+            </div>
+        <?php }
+    } ?>
   </div>
   <!-- Artikel section end -->
 

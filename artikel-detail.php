@@ -1,38 +1,62 @@
 <?php  
   require "inc/koneksi.php";
 
+  // Mulai session jika belum dimulai
+  if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+  }
+
+  // Buat CSRF token jika belum ada
+  if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+  }
+
   if (!file_exists('../upload/profile')) {
     mkdir('../upload/profile', 0777, true);
   }
 
-  // Mengambil nilai judul dari parameter GET
+  // Validasi dan sanitasi parameter GET
+  if (!isset($_GET['judul']) || empty($_GET['judul'])) {
+    // Redirect ke halaman utama atau halaman error jika parameter tidak ada
+    header("Location: index.php");
+    exit();
+  }
+
+  // Sanitasi parameter GET
   $judul = htmlspecialchars($_GET['judul']); 
 
-  // Mengeksekusi query SQL untuk mengambil data artikel berdasarkan judul
-  $queryArtikel = mysqli_query($conn, "SELECT * FROM artikel WHERE judul='$judul'"); 
+  // Gunakan prepared statement daripada menyisipkan variabel langsung
+  $stmt = $conn->prepare("SELECT * FROM artikel WHERE judul = ?");
+  $stmt->bind_param("s", $judul);
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $artikel = $result->fetch_array();
   
-  // Mengambil hasil query dalam bentuk array
-  $artikel = mysqli_fetch_array($queryArtikel); 
+  // Redirect jika artikel tidak ditemukan
+  if (!$artikel) {
+    header("Location: artikel.php");
+    exit();
+  }
 
-  $foto_profil = $komentar['foto_profil'];
+  // Perbaikan masalah variabel yang tidak terdefinisi
+  $foto_profil = isset($komentar['foto_profil']) ? $komentar['foto_profil'] : '';
 
-  // Debug step: Check the actual value of $foto_profil
+  // Langkah debug: Periksa nilai sebenarnya dari $foto_profil
   error_log("Foto profil value: " . print_r($foto_profil, true));
   
-  // Modify the path logic
+  // Modifikasi logika path
   $foto_profil_path = (!empty($foto_profil) && $foto_profil !== NULL) 
       ? 'css/image/profile/' . $foto_profil 
       : 'https://bootdey.com/img/Content/avatar/avatar1.png';
   
-  // Add additional debug logging
+  // Tambahkan logging debug tambahan
   error_log("Generated foto_profil_path: " . $foto_profil_path);
   
-  // Add an additional check before displaying
-  if (!file_exists($foto_profil_path)) {
-      $foto_profil_path = 'css/image/profile/';
+  // Tambahkan pemeriksaan tambahan sebelum menampilkan
+  if (!file_exists($foto_profil_path) && strpos($foto_profil_path, 'https://') === false) {
+      $foto_profil_path = 'https://bootdey.com/img/Content/avatar/avatar1.png';
       error_log("Profile image not found, using default: " . $foto_profil_path);
   }
-
 ?>
 
 <!DOCTYPE html>
@@ -52,7 +76,6 @@
   <link rel="stylesheet" href="css/style2.css">
   <link rel="stylesheet" href="css/artikel1.css">
 
-
   <title>kitasehat | Artikel</title>
 </head>
 
@@ -65,6 +88,8 @@
 
     <div class="search-box">
       <form action="artikel.php" method="get">
+        <!-- Tambahkan CSRF token ke form pencarian -->
+        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
         <input type="text" name="search" id="srch" placeholder="search">
         <button type="submit"><i class="fa-solid fa-search"></i></button>
       </form>
@@ -76,20 +101,18 @@
         <a href="index.php#artikel">Artikel</a>
         <a href="index.php#kontak">Kontak</a>
         <?php
-        if (session_status() == PHP_SESSION_NONE) {
-            session_start();    
-            // Cek apakah sudah login berdasarkan session
-            if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
-                // Periksa apakah ada role yang diset dalam session
-                if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
-                    echo '<a href="postingan.php">Postingan</a>';
-                }
-                
-                echo '<a href="profile.php" id="login">Profile</a>';
-            } else {
-                // Jika belum login, tampilkan tombol Login
-                echo '<a href="login.php" id="login">Login</a>';
+        // Session sudah dimulai di awal file
+        // Cek apakah sudah login berdasarkan session
+        if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
+            // Periksa apakah ada role yang diset dalam session
+            if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
+                echo '<a href="postingan/">Postingan</a>';
             }
+            
+            echo '<a href="profile.php" id="login">Profile</a>';
+        } else {
+            // Jika belum login, tampilkan tombol Login
+            echo '<a href="login.php" id="login">Login</a>';
         }
         ?>
     </div>
@@ -97,19 +120,17 @@
     <div class="hamburger">
       <a href="#" id="hamburger" class="fa-solid fa-bars fa-xl"></a>
     </div>
-
-
   </div>
   <!-- Navbar end -->
 
   <!-- artikel section start-->
     <section id="detail" class="detail-artikel">
-        <h3 style="margin-top: 2rem;"><?php echo $artikel['judul']; ?></h3>
+        <h3 style="margin-top: 2rem;"><?php echo htmlspecialchars($artikel['judul']); ?></h3>
     </section>
 
     <div class="container-main"></div>
     <div class="main">
-      <p><?php echo $artikel['isi']; ?></p>
+    <?php echo nl2br(html_entity_decode($artikel['isi'])); ?>
     </div>
 
     <div class="selebihnya">
@@ -136,15 +157,16 @@ function get_profile_image_path($foto_profil) {
     }
     
     return 'assets/default-profile.png';
-  }
+}
 
         // Cek apakah user sudah login
         if (isset($_SESSION['login']) && $_SESSION['login'] === true):
         ?>
-            <!-- Form Komentar -->
+            <!-- Form Komentar dengan proteksi CSRF -->
             <form action="inc/proses_komentar.php" method="POST" class="form-komentar">
+                <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
                 <textarea name="isi_komentar" placeholder="Tulis komentar Anda..." required></textarea>
-                <input type="hidden" name="artikel_id" value="<?php echo $artikel['id']; ?>">
+                <input type="hidden" name="artikel_id" value="<?php echo (int)$artikel['id']; ?>">
                 <input type="hidden" name="judul" value="<?php echo htmlspecialchars($artikel['judul']); ?>">
                 <button type="submit">Kirim Komentar</button>
             </form>
@@ -158,20 +180,20 @@ function get_profile_image_path($foto_profil) {
         <!-- Daftar Komentar -->
         <div class="daftar-komentar">
             <?php
-            // Hitung total komentar untuk artikel ini
+            // Hitung total komentar untuk artikel ini - menggunakan prepared statement
             $stmt_count = $conn->prepare("SELECT COUNT(*) as total_comments FROM komentar WHERE artikel_id = ?");
             $stmt_count->bind_param("i", $artikel['id']);
             $stmt_count->execute();
             $result_count = $stmt_count->get_result();
             $total_comments = $result_count->fetch_assoc()['total_comments'];
 
-            // Ambil 5 komentar terbaru
+            // Ambil 5 komentar terbaru - menggunakan prepared statement
             $query_komentar = "SELECT k.*, u.username, u.foto_profil 
-                                FROM komentar k 
-                                JOIN users u ON k.user_id = u.id 
-                                WHERE k.artikel_id = ? 
-                                ORDER BY k.created_at DESC 
-                                LIMIT 5";
+                              FROM komentar k 
+                              JOIN users u ON k.user_id = u.id 
+                              WHERE k.artikel_id = ? 
+                              ORDER BY k.created_at DESC 
+                              LIMIT 5";
             
             $stmt = $conn->prepare($query_komentar);
             $stmt->bind_param("i", $artikel['id']);
@@ -182,7 +204,7 @@ function get_profile_image_path($foto_profil) {
                 while ($komentar = $result_komentar->fetch_assoc()):
                     // Tentukan path foto profil
                     $foto_profil = $komentar['foto_profil'];
-                    $foto_profil_path = !empty($foto_profil) ? 'css/image/profile/' . $foto_profil :  'https://bootdey.com/img/Content/avatar/avatar1.png';
+                    $foto_profil_path = !empty($foto_profil) ? 'css/image/profile/' . $foto_profil : 'https://bootdey.com/img/Content/avatar/avatar1.png';
             ?>
                     <div class="komentar">
                         <div class="komentar-profil">
@@ -205,15 +227,14 @@ function get_profile_image_path($foto_profil) {
         <!-- Tombol Lihat Semua Komentar -->
         <?php if ($total_comments > 5): ?>
             <div class="lihat-semua-komentar">
-                <button id="btn-semua-komentar" data-artikel-id="<?php echo $artikel['id']; ?>">
-                    Lihat Semua Komentar (<?php echo $total_comments; ?>)
+                <button id="btn-semua-komentar" data-artikel-id="<?php echo (int)$artikel['id']; ?>">
+                    Lihat Semua Komentar (<?php echo (int)$total_comments; ?>)
                 </button>
             </div>
         <?php endif; ?>
     </div>
 </section>
 <!-- Komentar Section End -->
-
 
     <!-- footer Section start -->
     <section class="footer">
@@ -263,11 +284,14 @@ function get_profile_image_path($foto_profil) {
                 const artikelId = this.getAttribute('data-artikel-id');
                 const loadingText = 'Memuat komentar...';
                 
-                // Disable button and show loading text
+                // Nonaktifkan tombol dan tampilkan teks loading
                 btnSemuaKomentar.disabled = true;
                 btnSemuaKomentar.textContent = loadingText;
                 
-                fetch(`inc/get_all_comments.php?artikel_id=${artikelId}`)
+                // Tambahkan CSRF token ke request
+                const csrfToken = '<?php echo $_SESSION['csrf_token']; ?>';
+                
+                fetch(`inc/get_all_comments.php?artikel_id=${artikelId}&csrf_token=${csrfToken}`)
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('Gagal memuat komentar');
@@ -275,10 +299,10 @@ function get_profile_image_path($foto_profil) {
                         return response.text();
                     })
                     .then(html => {
-                        // Hide the "Lihat Semua Komentar" button
+                        // Sembunyikan tombol "Lihat Semua Komentar"
                         btnSemuaKomentar.style.display = 'none';
                         
-                        // Append comments to the existing list
+                        // Tambahkan komentar ke daftar yang sudah ada
                         daftarKomentar.insertAdjacentHTML('beforeend', html);
                     })
                     .catch(error => {

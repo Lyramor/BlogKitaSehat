@@ -9,97 +9,151 @@ if(!isset($_SESSION['login'])){
     exit();
 }
 
+// CSRF token generation
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $user_id = $_SESSION['id'];
 
-// Get categories
-$queryKategori = mysqli_query($conn, "SELECT * FROM kategori");
+// Validasi user_id
+if (!is_numeric($user_id)) {
+    die("Invalid user ID");
+}
+
+// Prepared statement untuk kategori
+$stmt = $conn->prepare("SELECT * FROM kategori");
+$stmt->execute();
+$queryKategori = $stmt->get_result();
 
 // Handle form submission
 if (isset($_POST['simpan'])) {
-    $judul = htmlspecialchars($_POST['judul']);
-    $kategori = htmlspecialchars($_POST['kategori']);
+    // CSRF Token validation
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die("CSRF token validation failed");
+    }
+    
+    // Validasi input
+    $judul = trim($_POST['judul']);
+    $kategori = trim($_POST['kategori']);
     $isi = $_POST['isi'];
-    $sinopsis = htmlspecialchars($_POST['sinopsis']);
+    $sinopsis = trim($_POST['sinopsis']);
     $new_name = '';
+    $error_message = '';
+    
+    // Validasi panjang input
+    if (empty($judul) || strlen($judul) > 255) {
+        $error_message = "Judul tidak boleh kosong dan maksimal 255 karakter";
+    } elseif (empty($kategori) || !is_numeric($kategori)) {
+        $error_message = "Kategori tidak valid";
+    } elseif (empty($isi)) {
+        $error_message = "Konten tidak boleh kosong";
+    } elseif (empty($sinopsis)) {
+        $error_message = "Sinopsis tidak boleh kosong";
+    }
+    
+    // Jika tidak ada error, lanjutkan proses
+    if (empty($error_message)) {
+        // Image Upload Handling
+        if (!empty($_FILES["gambar"]["name"])) {
+            $target_dir = "../css/image/";
+            
+            // Create directory if it doesn't exist
+            if (!file_exists($target_dir)) {
+                mkdir($target_dir, 0777, true);
+            }
 
-    // Image Upload Handling
-    if (!empty($_FILES["gambar"]["name"])) {
-        $target_dir = "../css/image/";
-        
-        // Create directory if it doesn't exist
-        if (!file_exists($target_dir)) {
-            mkdir($target_dir, 0777, true);
-        }
+            $nama_file = basename($_FILES["gambar"]["name"]);
+            $imageFileType = strtolower(pathinfo($nama_file, PATHINFO_EXTENSION));
+            $image_size = $_FILES["gambar"]["size"];
+            $random_name = bin2hex(random_bytes(10));
+            $new_name = $random_name . "." . $imageFileType;
 
-        $nama_file = basename($_FILES["gambar"]["name"]);
-        $imageFileType = strtolower(pathinfo($nama_file, PATHINFO_EXTENSION));
-        $image_size = $_FILES["gambar"]["size"];
-        $random_name = bin2hex(random_bytes(10));
-        $new_name = $random_name . "." . $imageFileType;
+            $uploadOk = true;
 
-        $uploadOk = true;
-        $error_message = "";
-
-        // Check file size
-        if ($image_size > 4000000) {
-            $error_message = "File size must not exceed 4MB";
-            $uploadOk = false;
-        }
-
-        // Allow certain file formats
-        if (!in_array($imageFileType, ['jpg', 'jpeg', 'png', 'gif'])) {
-            $error_message = "Only JPG, JPEG, PNG & GIF files are allowed";
-            $uploadOk = false;
-        }
-
-        // Upload file if everything is ok
-        if ($uploadOk) {
-            if (move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name)) {
-                // File uploaded successfully
-            } else {
-                $error_message = "Sorry, there was an error uploading your file.";
+            // Check file size
+            if ($image_size > 4000000) {
+                $error_message = "Ukuran file tidak boleh melebihi 4MB";
                 $uploadOk = false;
+            }
+
+            // Allow certain file formats
+            if (!in_array($imageFileType, ['jpg', 'jpeg', 'png', 'gif'])) {
+                $error_message = "Hanya file JPG, JPEG, PNG & GIF yang diperbolehkan";
+                $uploadOk = false;
+            }
+
+            // Upload file if everything is ok
+            if ($uploadOk) {
+                if (move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name)) {
+                    // File uploaded successfully
+                } else {
+                    $error_message = "Maaf, terjadi kesalahan saat mengunggah file Anda.";
+                    $uploadOk = false;
+                }
+            }
+
+            if (!$uploadOk) {
+                echo "<div class='alert alert-warning'>$error_message</div>";
+                $new_name = ''; 
             }
         }
 
-        if (!$uploadOk) {
-            echo "<div class='alert alert-warning'>$error_message</div>";
-            $new_name = ''; 
+        // Database insertion dengan prepared statement
+        if (empty($error_message)) {
+            $stmt = $conn->prepare("INSERT INTO artikel 
+                                (kategori_id, user_id, judul, isi, sinopsis, gambar, status) 
+                                VALUES (?, ?, ?, ?, ?, ?, 'aktif')");
+            $stmt->bind_param("iissss", $kategori, $user_id, $judul, $isi, $sinopsis, $new_name);
+            
+            if ($stmt->execute()) {
+                echo '<div class="alert alert-success">Artikel berhasil disimpan</div>';
+                echo '<meta http-equiv="refresh" content="2">';
+            } else {
+                echo '<div class="alert alert-danger">Error: ' . $stmt->error . '</div>';
+            }
+            $stmt->close();
+        } else {
+            echo '<div class="alert alert-warning">' . $error_message . '</div>';
         }
-    }
-
-    // Database insertion dengan status
-    if (empty($error_message)) {
-      $queryTambah = mysqli_query($conn, "INSERT INTO artikel 
-                                        (kategori_id, user_id, judul, isi, sinopsis, gambar, status) 
-                                        VALUES 
-                                        ('$kategori', '$user_id', '$judul', '$isi', '$sinopsis', '$new_name', 'aktif')");
-
-      if ($queryTambah) {
-          echo '<div class="alert alert-success">Article saved successfully</div>';
-          echo '<meta http-equiv="refresh" content="2">';
-      } else {
-          echo '<div class="alert alert-danger">Error: ' . mysqli_error($conn) . '</div>';
-      }
+    } else {
+        echo '<div class="alert alert-warning">' . $error_message . '</div>';
     }
 }
 
-// Fetch articles with active status only
-$query = mysqli_query($conn, "SELECT artikel.*, kategori.nama AS nama_kategori 
-                            FROM artikel 
-                            JOIN kategori ON artikel.kategori_id = kategori.id 
-                            WHERE artikel.user_id = '$user_id' 
-                            AND artikel.status = 'aktif'
-                            ORDER BY artikel.id DESC");
-$jumlahArtikel = mysqli_num_rows($query);
+// Fetch articles with active status only using prepared statement
+$stmt = $conn->prepare("SELECT artikel.*, kategori.nama AS nama_kategori 
+                      FROM artikel 
+                      JOIN kategori ON artikel.kategori_id = kategori.id 
+                      WHERE artikel.user_id = ? 
+                      AND artikel.status = 'aktif'
+                      ORDER BY artikel.id DESC");
+$stmt->bind_param("i", $user_id);
+$stmt->execute();
+$query = $stmt->get_result();
+$jumlahArtikel = $query->num_rows;
 
-  // Handle article deletion
-  if(isset($_POST['delete'])) {
-    $artikel_id = $_POST['artikel_id']; // Ambil ID dari form
+// Handle article deletion
+if(isset($_POST['delete'])) {
+    // CSRF Token validation
+    if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+        die("CSRF token validation failed");
+    }
+    
+    $artikel_id = $_POST['artikel_id']; 
+    
+    // Validasi artikel_id
+    if (!is_numeric($artikel_id)) {
+        echo "<script>alert('ID artikel tidak valid!'); window.location.href = 'artikel.php';</script>";
+        exit();
+    }
 
-    // Ambil data artikel sebelum dihapus untuk mendapatkan nama file gambar
-    $queryGetArtikel = mysqli_query($conn, "SELECT * FROM artikel WHERE id = '$artikel_id' AND user_id = '$user_id'");
-    $artikel = mysqli_fetch_assoc($queryGetArtikel);
+    // Ambil data artikel sebelum dihapus dengan prepared statement
+    $stmt = $conn->prepare("SELECT * FROM artikel WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $artikel_id, $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $artikel = $result->fetch_assoc();
 
     if(!$artikel) {
         echo "<script>alert('Artikel tidak ditemukan!'); window.location.href = 'artikel.php';</script>";
@@ -114,17 +168,36 @@ $jumlahArtikel = mysqli_num_rows($query);
         }
     }
 
-    // Hapus artikel dari database
-    $deleteQuery = mysqli_query($conn, "DELETE FROM artikel WHERE id = '$artikel_id' AND user_id = '$user_id'");
-
-    if ($deleteQuery) {
+    // Hapus artikel dari database dengan prepared statement
+    $stmt = $conn->prepare("DELETE FROM artikel WHERE id = ? AND user_id = ?");
+    $stmt->bind_param("ii", $artikel_id, $user_id);
+    
+    if ($stmt->execute()) {
         echo "<script>alert('Artikel berhasil dihapus!'); window.location.href = 'artikel.php';</script>";
         exit();
     } else {
-        echo "<script>alert('Gagal menghapus artikel: " . mysqli_error($conn) . "');</script>";
+        echo "<script>alert('Gagal menghapus artikel: " . $stmt->error . "');</script>";
     }
-  }
+    $stmt->close();
+}
 
+function bersihkanHTML($konten, $panjang) {
+    // Decode HTML entities (seperti &nbsp;, &lt;, dll)
+    $konten = html_entity_decode($konten);
+    
+    // Hapus semua tag HTML
+    $teks_bersih = strip_tags($konten);
+    
+    // Bersihkan whitespace berlebih
+    $teks_bersih = trim(preg_replace('/\s+/', ' ', $teks_bersih));
+    
+    // Potong teks sesuai panjang yang diinginkan
+    if (strlen($teks_bersih) > $panjang) {
+        $teks_bersih = substr($teks_bersih, 0, $panjang) . '...';
+    }
+    
+    return htmlspecialchars($teks_bersih, ENT_QUOTES, 'UTF-8');
+}
 
 ?>
 
@@ -147,8 +220,80 @@ $jumlahArtikel = mysqli_num_rows($query);
 
     <!-- css -->
     <link rel="stylesheet" href="../css/style2.css">
-    <link rel="stylesheet" href="../css/artikel1.css">
     <link rel="stylesheet" href="../css/postingan.css">
+    <style>
+        .btn-primary, .btn-warning, .btn-info, .btn-danger, .btn-secondary {
+            padding: 8px 16px;
+            margin: 5px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .btn-primary {
+            background-color: #007bff;
+            color: white;
+        }
+
+        .btn-warning {
+            background-color: #ffc107;
+            color: #000;
+        }
+
+        .btn-info {
+            background-color: #17a2b8;
+            color: white;
+        }
+
+        .btn-danger {
+            background-color: #dc3545;
+            color: white;
+            text-decoration: none;
+        }
+
+        .btn-primary:hover, .btn-warning:hover, .btn-info:hover, .btn-danger:hover {
+            opacity: 0.9;
+        }
+
+        .current-image {
+            margin: 10px 0;
+            max-width: 200px;
+        }
+
+        a .btn-sm {
+          background-color: #fff;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          max-width: 600px;
+          margin: auto;
+        }
+
+        .content-cell, .synopsis-cell {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        
+        .table th, .table td {
+            word-wrap: break-word;
+            padding: 8px;
+        }
+
+        .btn-action{
+            margin-top: 1rem;
+        }
+    </style>
     <title>KitaSehat</title>
 </head>
 
@@ -192,10 +337,13 @@ $jumlahArtikel = mysqli_num_rows($query);
     <div class="container">
     <h3 style="margin-bottom: 1rem;">Tambah Artikel Baru</h3>
         <form id="form-tambah-artikel" action="" method="post" enctype="multipart/form-data">
+            <!-- CSRF Token -->
+            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+            
             <div class="form-group">
                 <label for="judul">Judul <span class="text-danger">*</span></label>
                 <input type="text" id="judul" name="judul" required 
-                        placeholder="Masukkan judul artikel">
+                        placeholder="Masukkan judul artikel" maxlength="255">
             </div>
 
             <div class="form-group">
@@ -203,20 +351,20 @@ $jumlahArtikel = mysqli_num_rows($query);
                 <select name="kategori" id="kategori" required>
                     <option value="">Pilih kategori</option>
                     <?php while ($data = mysqli_fetch_array($queryKategori)) { ?>
-                        <option value="<?php echo $data['id']; ?>"><?php echo $data['nama']; ?></option>
+                        <option value="<?php echo $data['id']; ?>"><?php echo htmlspecialchars($data['nama'], ENT_QUOTES, 'UTF-8'); ?></option>
                     <?php } ?>
                 </select>
             </div>
 
             <div class="form-group">
                 <label for="isi">Kontent <span class="text-danger">*</span></label>
-                <input id="article-content" type="hidden" name="isi">
+                <input id="article-content" type="hidden" name="isi" required>
                 <trix-editor input="article-content" class="trix-content" placeholder="Tulis artikel kamu disini"></trix-editor>
             </div>
 
             <div class="form-group">
                 <label for="sinopsis">Sinopsis <span class="text-danger">*</span></label>
-                <input id="article-synopsis" type="hidden" name="sinopsis">
+                <input id="article-synopsis" type="hidden" name="sinopsis" required>
                 <trix-editor input="article-synopsis" class="trix-content" placeholder="Tulis ringkasan artikel kamu"></trix-editor>
             </div>
 
@@ -226,7 +374,7 @@ $jumlahArtikel = mysqli_num_rows($query);
                         accept="image/jpg,image/jpeg,image/png,image/gif"
                         onchange="previewImage(this)">
                 <div id="imagePreview" class="image-preview"></div>
-                <small class="text-muted">Accepted formats: JPG, PNG, GIF (max 4MB)</small>
+                <small class="text-muted">Format yang diterima: JPG, PNG, GIF (maks 4MB)</small>
             </div>
 
             <div class="form-group">
@@ -248,39 +396,54 @@ $jumlahArtikel = mysqli_num_rows($query);
                         <th>Konten</th>
                         <th>Sinopsis</th>
                         <th>Gambar</th>
-                        <th>Dibuat pada</th>
+                        <th>Dibuat</th>
                         <th>Aksi</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php if ($jumlahArtikel == 0) { ?>
-                        <tr><td colspan="8" class="text-center">Tidak ada artikel ditemukan.</td></tr>
+                        <tr><td colspan="8" class="text-center">Tidak ada artikel yang tersedia</td></tr>
                     <?php } else {
                         $nomor = 1;
                         while ($data = mysqli_fetch_array($query)) { ?>
                             <tr>
                                 <td><?php echo $nomor++; ?></td>
-                                <td><?php echo $data['judul']; ?></td>
-                                <td><?php echo $data['nama_kategori']; ?></td>
-                                <td><?php echo substr($data['isi'], 0, 100) . '...'; ?></td>
-                                <td><?php echo $data['sinopsis']; ?></td>
+                                <td><?php echo htmlspecialchars($data['judul'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td><?php echo htmlspecialchars($data['nama_kategori'], ENT_QUOTES, 'UTF-8'); ?></td>
+                                <td class="content-cell">
+                                    <?php echo bersihkanHTML($data['isi'], 100); ?>
+                                </td>
+                                <td class="synopsis-cell">
+                                    <?php echo bersihkanHTML($data['sinopsis'], 100); ?>
+                                </td>
                                 <td>
                                     <?php if ($data['gambar']) { ?>
-                                        <img src="../css/image/<?php echo $data['gambar']; ?>" class="article-image">
+                                        <img src="../css/image/<?php echo htmlspecialchars($data['gambar'], ENT_QUOTES, 'UTF-8'); ?>" class="article-image">
                                     <?php } else { ?>
-                                        <span class="text-muted">Tidak ada gambar</span>
+                                        <span class="text-muted">Tidak Ada Gambar</span>
                                     <?php } ?>
                                 </td>
-                                <td class="timestamp"><?php echo $data['created_at']; ?></td>
+                                <td class="timestamp"><?php echo htmlspecialchars($data['created_at'], ENT_QUOTES, 'UTF-8'); ?></td>
                                 <td>
-                                    <a href="artikel-detail.php?p=<?php echo $data['id']; ?>" class="btn-info btn-sm">Lihat</a>
-                                    <a href="artikel-edit.php?p=<?php echo $data['id']; ?>" class="btn-warning btn-sm">Ubah</a>
-                                    <form method="post" style="display:inline;">
-                                        <input type="hidden" name="artikel_id" value="<?php echo $data['id']; ?>">
-                                        <button type="submit" name="delete" class="btn-danger btn-sm" onclick="return confirm('Apakah Anda yakin ingin menghapus artikel ini?')">
-                                            Hapus
-                                        </button>
-                                    </form>
+                                    <div class="btn-action">
+                                        <form action="" style="display:inline;">
+                                            <a href="artikel-detail.php?p=<?php echo htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8'); ?>" class="btn-info btn-sm">Lihat</a>
+                                        </form>
+                                    </div>
+                                    <div class="btn-action">
+                                        <form action="" style="display:inline;">
+                                            <a href="artikel-edit.php?p=<?php echo htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8'); ?>" class="btn-warning btn-sm">Edit</a>
+                                        </form>   
+                                    </div>
+                                    <div class="btn-action">
+                                        <form method="post" style="display:inline;">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                                            <input type="hidden" name="artikel_id" value="<?php echo htmlspecialchars($data['id'], ENT_QUOTES, 'UTF-8'); ?>">
+                                            <button type="submit" name="delete" class="btn-danger btn-sm" onclick="return confirm('Apakah Anda yakin ingin menghapus artikel ini?')">
+                                                Hapus
+                                            </button>
+                                        </form>
+                                    </div>
                                 </td>
                             </tr>
                         <?php }
@@ -332,218 +495,133 @@ $jumlahArtikel = mysqli_num_rows($query);
 
     <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/trix/1.3.1/trix.css">
     <script>
+        // Validasi parameter GET
+        function validateGetParameter() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const pParam = urlParams.get('p');
+            
+            if (pParam !== null && !/^\d+$/.test(pParam)) {
+                alert('Parameter tidak valid!');
+                window.location.href = 'artikel.php';
+                return false;
+            }
+            return true;
+        }
+        
+        // Panggil validasi saat halaman dimuat
+        document.addEventListener('DOMContentLoaded', validateGetParameter);
+        
         // Form validation
         document.getElementById('form-tambah-artikel').onsubmit = function(e) {
             const title = document.getElementById('judul').value.trim();
             const category = document.getElementById('kategori').value;
             const content = document.getElementById('article-content').value.trim();
-            const synopsis = document.getElementById('sinopsis').value.trim();
+            const synopsis = document.getElementById('article-synopsis').value.trim();
             
             if (!title || !category || !content || !synopsis) {
-                alert('Please fill in all required fields');
+                alert('Silakan isi semua bidang yang wajib diisi');
                 e.preventDefault();
                 return false;
             }
             
-            const image = document.getElementById('gambar').files[0];
-            if (image && image.size > 4 * 1024 * 1024) {
-                alert('Image size must not exceed 4MB');
+            // Validasi panjang judul
+            if (title.length > 255) {
+                alert('Judul tidak boleh lebih dari 255 karakter');
                 e.preventDefault();
                 return false;
+            }
+            
+            // Validasi gambar
+            const image = document.getElementById('gambar').files[0];
+            if (image) {
+                if (image.size > 4 * 1024 * 1024) {
+                    alert('Ukuran gambar tidak boleh melebihi 4MB');
+                    e.preventDefault();
+                    return false;
+                }
+                
+                const fileType = image.type.toLowerCase();
+                if (!['image/jpeg', 'image/jpg', 'image/png', 'image/gif'].includes(fileType)) {
+                    alert('Hanya file JPG, JPEG, PNG & GIF yang diperbolehkan');
+                    e.preventDefault();
+                    return false;
+                }
             }
             
             return true;
         };
 
-  // Styles for Trix Editor
-  document.head.insertAdjacentHTML('beforeend', `
-  <style>
-      trix-editor {
-          min-height: 300px;
-          max-height: 500px;
-          overflow-y: auto;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          padding: 10px;
-          background-color: white;
-          cursor: text;
-      }
-      
-      trix-toolbar {
-          background-color: #f8f9fa;
-          padding: 5px;
-          border: 1px solid #ddd;
-          border-radius: 4px;
-          margin-bottom: 5px;
-      }
+        // Fungsi untuk preview gambar
+        function previewImage(input) {
+            const preview = document.getElementById('imagePreview');
+            preview.innerHTML = '';
+            
+            if (input.files && input.files[0]) {
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    const img = document.createElement('img');
+                    img.src = e.target.result;
+                    img.style.maxWidth = '100%';
+                    img.style.height = 'auto';
+                    preview.appendChild(img);
+                }
+                
+                reader.readAsDataURL(input.files[0]);
+            }
+        }
 
-      trix-editor:focus {
-          outline: none;
-          border-color: #80bdff;
-          box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
-      }
+        // Styles for Trix Editor
+        document.head.insertAdjacentHTML('beforeend', `
+        <style>
+            trix-editor {
+                min-height: 300px;
+                max-height: 500px;
+                overflow-y: auto;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                padding: 10px;
+                background-color: white;
+                cursor: text;
+            }
+            
+            trix-toolbar {
+                background-color: #f8f9fa;
+                padding: 5px;
+                border: 1px solid #ddd;
+                border-radius: 4px;
+                margin-bottom: 5px;
+            }
 
-      .trix-button-group {
-          border: 1px solid #ddd;
-          border-radius: 3px;
-          margin-right: 5px;
-      }
+            trix-editor:focus {
+                outline: none;
+                border-color: #80bdff;
+                box-shadow: 0 0 0 0.2rem rgba(0,123,255,.25);
+            }
 
-      .trix-button {
-          background: #fff;
-          border: none;
-          color: #333;
-          padding: 4px 8px;
-          cursor: pointer;
-      }
+            .trix-button-group {
+                border: 1px solid #ddd;
+                border-radius: 3px;
+                margin-right: 5px;
+            }
 
-      .trix-button:hover {
-          background: #f0f0f0;
-      }
+            .trix-button {
+                background: #fff;
+                border: none;
+                color: #333;
+                padding: 4px 8px;
+                cursor: pointer;
+            }
 
-      .trix-button.trix-active {
-          background: #e9ecef;
-      }
-  </style>
-  `);
+            .trix-button:hover {
+                background: #f0f0f0;
+            }
 
-  // Initialize when DOM is fully loaded
-  document.addEventListener("DOMContentLoaded", function() {
-      // Initialize Trix editors
-      document.querySelectorAll("trix-editor").forEach(editor => {
-          editor.setAttribute("contenteditable", "true");
-      });
-
-      // Event listener for Trix initialization
-      document.addEventListener("trix-initialize", function(event) {
-          event.target.editor.element.setAttribute("contenteditable", "true");
-      });
-
-      // Event listener for content changes
-      document.addEventListener("trix-change", function(event) {
-          const element = event.target;
-          const inputId = element.getAttribute("input");
-          const hiddenInput = document.getElementById(inputId);
-          
-          if (hiddenInput) {
-              hiddenInput.value = element.editor.getDocument().toString();
-          }
-          
-          // Optional: Add validation visual feedback
-          if (element.editor.getDocument().toString().trim() === "") {
-              element.classList.add("is-invalid");
-          } else {
-              element.classList.remove("is-invalid");
-          }
-      });
-
-      // Prevent file attachments (optional - remove if you want to allow file attachments)
-      document.addEventListener("trix-file-accept", function(event) {
-          event.preventDefault();
-      });
-
-      // Image preview functionality
-      function previewImage(input) {
-          const preview = document.getElementById('imagePreview');
-          preview.innerHTML = '';
-          
-          if (input.files && input.files[0]) {
-              const reader = new FileReader();
-              
-              reader.onload = function(e) {
-                  const img = document.createElement('img');
-                  img.src = e.target.result;
-                  img.style.maxWidth = '100%';
-                  img.style.height = 'auto';
-                  preview.appendChild(img);
-              }
-              
-              reader.readAsDataURL(input.files[0]);
-          }
-      }
-
-      // Attach image preview handler
-      const imageInput = document.getElementById('gambar');
-      if (imageInput) {
-          imageInput.addEventListener('change', function() {
-              previewImage(this);
-          });
-      }
-
-      // Form validation
-      const form = document.getElementById('form-tambah-artikel');
-      if (form) {
-          form.addEventListener('submit', function(e) {
-              const title = document.getElementById('judul').value.trim();
-              const category = document.getElementById('kategori').value;
-              const content = document.getElementById('article-content').value.trim();
-              const synopsis = document.getElementById('article-synopsis').value.trim();
-              
-              let isValid = true;
-              let errorMessage = [];
-
-              // Validate title
-              if (!title) {
-                  errorMessage.push("Title is required");
-                  isValid = false;
-              }
-
-              // Validate category
-              if (!category) {
-                  errorMessage.push("Category is required");
-                  isValid = false;
-              }
-
-              // Validate content
-              if (!content) {
-                  errorMessage.push("Content is required");
-                  isValid = false;
-              }
-
-              // Validate synopsis
-              if (!synopsis) {
-                  errorMessage.push("Synopsis is required");
-                  isValid = false;
-              }
-
-              // Validate image if one is selected
-              const image = document.getElementById('gambar').files[0];
-              if (image) {
-                  if (image.size > 4 * 1024 * 1024) {
-                      errorMessage.push("Image size must not exceed 4MB");
-                      isValid = false;
-                  }
-
-                  const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
-                  if (!allowedTypes.includes(image.type)) {
-                      errorMessage.push("Only JPG, JPEG, PNG & GIF files are allowed");
-                      isValid = false;
-                  }
-              }
-
-              if (!isValid) {
-                  e.preventDefault();
-                  alert(errorMessage.join("\n"));
-                  return false;
-              }
-
-              return true;
-          });
-      }
-
-      // Optional: Auto-save draft functionality
-      let autoSaveTimeout;
-      document.querySelectorAll("trix-editor").forEach(editor => {
-          editor.addEventListener("trix-change", function() {
-              clearTimeout(autoSaveTimeout);
-              autoSaveTimeout = setTimeout(function() {
-                  // Here you could implement auto-save functionality
-                  console.log("Content auto-saved");
-                  // Example: localStorage.setItem('draft-' + editor.getAttribute('input'), editor.editor.getDocument().toString());
-              }, 1000);
-          });
-      });
-  });
+            .trix-button.trix-active {
+                background: #e9ecef;
+            }
+        </style>
+        `);
     </script>
 </body>
 </html>
