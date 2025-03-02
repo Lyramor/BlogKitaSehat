@@ -58,6 +58,16 @@ if (isset($_POST["login"])) {
         $error = true;
     }
 }
+
+// Check for account deletion cookie
+if (isset($_COOKIE['account_deleted']) && $_COOKIE['account_deleted'] === 'true') {
+    $_SESSION['success'] = $_COOKIE['success_message'] ?? "Akun Anda berhasil dihapus";
+    $_SESSION['alert_type'] = "success";
+
+    // Clear the cookies
+    setcookie('account_deleted', '', time() - 3600, '/');
+    setcookie('success_message', '', time() - 3600, '/');
+}
 ?>
 
 <!DOCTYPE html>
