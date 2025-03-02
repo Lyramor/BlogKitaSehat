@@ -2,35 +2,74 @@
 require "../inc/koneksi.php";
 session_start();
 
-// Periksa apakah user sudah login dan dapatkan ID dari session
+// Generate atau verifikasi CSRF token
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
+// Validasi apakah user sudah login dan dapatkan ID dari session
 if(isset($_SESSION['id'])) {  // Sesuaikan dengan nama session yang Anda gunakan
     $user_id = $_SESSION['id'];
     
-    // Query untuk menghitung artikel berdasarkan user_id
+    // Validasi user_id
+    if (!is_numeric($user_id) || $user_id <= 0) {
+        // Jika user_id tidak valid, atur ke 0 atau redirect ke halaman login
+        $user_id = 0;
+        // Atau: header("Location: login.php"); exit;
+    }
+    
+    // Query untuk menghitung artikel berdasarkan user_id menggunakan placeholder '?'
     $query = "SELECT COUNT(*) as total_artikel FROM artikel WHERE user_id = ?";
     $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $user_id);
+    $stmt->bind_param("i", $user_id); // 'i' untuk integer
     $stmt->execute();
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     $jumlahArtikel = $row['total_artikel'];
 } else {
     $jumlahArtikel = 0; // Jika user belum login
+    $user_id = 0; // Set default untuk menghindari error
 }
 
 function hitungArtikelArsip($conn, $user_id) {
-    $query = "SELECT COUNT(*) as total_arsip FROM artikel WHERE user_id = ? AND status = 'arsip'";
+    // Validasi parameter
+    if (!is_numeric($user_id) || $user_id <= 0) {
+        return 0;
+    }
+    
+    // Gunakan placeholders '?' untuk MySQLi
+    $query = "SELECT COUNT(*) as total_arsip FROM artikel WHERE user_id = ? AND status = ?";
     $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $user_id);
+    $status = 'arsip';
+    $stmt->bind_param("is", $user_id, $status); // 'i' untuk integer, 's' untuk string
     $stmt->execute();
     $result = $stmt->get_result();
     $row = $result->fetch_assoc();
     return $row['total_arsip'];
 }
-$jumlahArtikelArsip = hitungArtikelArsip($conn, $user_id);
 
+// Validasi parameter sebelum memanggil fungsi
+if (isset($user_id) && is_numeric($user_id) && $user_id > 0) {
+    $jumlahArtikelArsip = hitungArtikelArsip($conn, $user_id);
+} else {
+    $jumlahArtikelArsip = 0;
+}
 
+// Verifikasi parameter GET jika ada
+if (isset($_GET['page'])) {
+    $page = filter_input(INPUT_GET, 'page', FILTER_VALIDATE_INT);
+    if ($page === false || $page < 1) {
+        $page = 1; // Default jika tidak valid
+    }
+} else {
+    $page = 1; // Default jika tidak ada parameter
+}
 
+// Fungsi untuk escape output HTML untuk mencegah XSS
+function escape_html($text) {
+    return htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
+}
 ?>
 
 <!DOCTYPE html>
@@ -85,7 +124,7 @@ $jumlahArtikelArsip = hitungArtikelArsip($conn, $user_id);
     <!-- Navbar end -->
 
     <!-- Card Section start -->
-    <section id="#" class="postingan">
+    <section id="#" class="postingan" style="margin-top: 3rem;">
         <h2>Artikel Saya</h2>
     </section>
     <div class="card-container">
@@ -98,7 +137,7 @@ $jumlahArtikelArsip = hitungArtikelArsip($conn, $user_id);
                     </div>
                     <div class="text-section">
                         <h3>Artikel</h3>
-                        <p class="count"><?php echo $jumlahArtikel ?> Artikel</p>
+                        <p class="count"><?php echo escape_html($jumlahArtikel); ?> Artikel</p>
                         <p><a href="artikel.php">Lihat Detail</a></p>
                     </div>
                 </div>
@@ -112,7 +151,7 @@ $jumlahArtikelArsip = hitungArtikelArsip($conn, $user_id);
                     </div>
                     <div class="text-section">
                         <h3>Arsip Artikel</h3>
-                        <p class="count"><?= $jumlahArtikelArsip; ?> Artikel</p>
+                        <p class="count"><?php echo escape_html($jumlahArtikelArsip); ?> Artikel</p>
                         <p><a href="artikel-arsip.php">Lihat Detail</a></p>
                     </div>
                 </div>

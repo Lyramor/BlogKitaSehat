@@ -9,36 +9,74 @@ if(!isset($_SESSION['login'])){
     exit();
 }
 
+// Generate CSRF token if not exists
+if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
 $user_id = $_SESSION['id'];
 
-// Handle unarchive
-if(isset($_POST['unarchive'])) {
-    $artikel_id = $_POST['artikel_id'];
+// Handle unarchive with CSRF validation
+if(isset($_POST['unarchive']) && isset($_POST['csrf_token'])) {
+    // Validasi CSRF token
+    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        die("CSRF token validation failed");
+    }
     
-    $updateQuery = mysqli_query($conn, "UPDATE artikel 
-                                      SET status = 'aktif', 
-                                          archived_at = NULL 
-                                      WHERE id = '$artikel_id' 
-                                      AND user_id = '$user_id'");
+    // Validasi artikel_id
+    if (!isset($_POST['artikel_id']) || !is_numeric($_POST['artikel_id'])) {
+        echo "<script>alert('ID artikel tidak valid!'); window.location.href = 'artikel-arsip.php';</script>";
+        exit();
+    }
+    
+    $artikel_id = intval($_POST['artikel_id']);
+    
+    // Gunakan prepared statement untuk update
+    $updateQuery = "UPDATE artikel 
+                  SET status = 'aktif', 
+                      archived_at = NULL 
+                  WHERE id = ? 
+                  AND user_id = ?";
+                  
+    $stmt = mysqli_prepare($conn, $updateQuery);
+    mysqli_stmt_bind_param($stmt, "ii", $artikel_id, $user_id);
+    $updateResult = mysqli_stmt_execute($stmt);
                                       
-    if($updateQuery) {
-        echo "<script>alert('Article successfully unarchived!'); window.location.href = 'artikel-arsip.php';</script>";
+    if($updateResult) {
+        // Regenerate CSRF token setelah operasi berhasil
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        echo "<script>alert('Artikel berhasil dibatalkan dari arsip!'); window.location.href = 'artikel-arsip.php';</script>";
         exit();
     } else {
-        echo "<script>alert('Failed to unarchive article: " . mysqli_error($conn) . "');</script>";
+        echo "<script>alert('Gagal membatalkan arsip artikel: " . mysqli_error($conn) . "');</script>";
     }
 }
 
-// Handle delete
-if(isset($_POST['delete'])) {
-    $artikel_id = $_POST['artikel_id'];
+// Handle delete with CSRF validation
+if(isset($_POST['delete']) && isset($_POST['csrf_token'])) {
+    // Validasi CSRF token
+    if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'])) {
+        die("CSRF token validation failed");
+    }
     
-    // Get article data before deletion to get image filename
-    $queryGetArtikel = mysqli_query($conn, "SELECT * FROM artikel WHERE id = '$artikel_id' AND user_id = '$user_id'");
-    $artikel = mysqli_fetch_assoc($queryGetArtikel);
+    // Validasi artikel_id
+    if (!isset($_POST['artikel_id']) || !is_numeric($_POST['artikel_id'])) {
+        echo "<script>alert('ID artikel tidak valid!'); window.location.href = 'artikel-arsip.php';</script>";
+        exit();
+    }
+    
+    $artikel_id = intval($_POST['artikel_id']);
+    
+    // Get article data before deletion using prepared statement
+    $queryGetArtikel = "SELECT * FROM artikel WHERE id = ? AND user_id = ?";
+    $stmt = mysqli_prepare($conn, $queryGetArtikel);
+    mysqli_stmt_bind_param($stmt, "ii", $artikel_id, $user_id);
+    mysqli_stmt_execute($stmt);
+    $result = mysqli_stmt_get_result($stmt);
+    $artikel = mysqli_fetch_assoc($result);
     
     if(!$artikel) {
-        echo "<script>alert('Article not found!'); window.location.href = 'artikel-arsip.php';</script>";
+        echo "<script>alert('Artikel tidak ditemukan!'); window.location.href = 'artikel-arsip.php';</script>";
         exit();
     }
     
@@ -46,29 +84,39 @@ if(isset($_POST['delete'])) {
     if(!empty($artikel['gambar'])) {
         $image_path = "../css/image/" . $artikel['gambar'];
         if(file_exists($image_path) && !unlink($image_path)) {
-            echo "<script>alert('Failed to delete image!');</script>";
+            echo "<script>alert('Gagal menghapus gambar!');</script>";
         }
     }
     
-    // Delete article from database
-    $deleteQuery = mysqli_query($conn, "DELETE FROM artikel WHERE id = '$artikel_id' AND user_id = '$user_id'");
+    // Delete article from database using prepared statement
+    $deleteQuery = "DELETE FROM artikel WHERE id = ? AND user_id = ?";
+    $stmt = mysqli_prepare($conn, $deleteQuery);
+    mysqli_stmt_bind_param($stmt, "ii", $artikel_id, $user_id);
+    $deleteResult = mysqli_stmt_execute($stmt);
     
-    if($deleteQuery) {
-        echo "<script>alert('Article successfully deleted!'); window.location.href = 'artikel-arsip.php';</script>";
+    if($deleteResult) {
+        // Regenerate CSRF token setelah operasi berhasil
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+        echo "<script>alert('Artikel berhasil dihapus!'); window.location.href = 'artikel-arsip.php';</script>";
         exit();
     } else {
-        echo "<script>alert('Failed to delete article: " . mysqli_error($conn) . "');</script>";
+        echo "<script>alert('Gagal menghapus artikel: " . mysqli_error($conn) . "');</script>";
     }
 }
 
-// Fetch archived articles
-$query = mysqli_query($conn, "SELECT artikel.*, kategori.nama AS nama_kategori 
-                              FROM artikel 
-                              JOIN kategori ON artikel.kategori_id = kategori.id 
-                              WHERE artikel.user_id = '$user_id' 
-                              AND artikel.status = 'arsip'
-                              ORDER BY artikel.archived_at DESC");
-$jumlahArtikel = mysqli_num_rows($query);
+// Fetch archived articles using prepared statement
+$query = "SELECT artikel.*, kategori.nama AS nama_kategori 
+          FROM artikel 
+          JOIN kategori ON artikel.kategori_id = kategori.id 
+          WHERE artikel.user_id = ? 
+          AND artikel.status = 'arsip'
+          ORDER BY artikel.archived_at DESC";
+          
+$stmt = mysqli_prepare($conn, $query);
+mysqli_stmt_bind_param($stmt, "i", $user_id);
+mysqli_stmt_execute($stmt);
+$result = mysqli_stmt_get_result($stmt);
+$jumlahArtikel = mysqli_num_rows($result);
 
 function bersihkanHTML($konten, $panjang) {
     // Decode HTML entities (seperti &nbsp;, &lt;, dll)
@@ -222,15 +270,15 @@ function bersihkanHTML($konten, $panjang) {
                         </tr>
                     <?php else: 
                         $nomor = 1;
-                        while ($data = mysqli_fetch_array($query)): ?>
+                        while ($data = mysqli_fetch_array($result)): ?>
                             <tr>
                                 <td><?php echo $nomor++; ?></td>
-                                <td><?php echo $data['judul']; ?></td>
-                                <td><?php echo $data['nama_kategori']; ?></td>
-                                <td><?php echo bersihkanHTML($data['isi'], 90); ?></td>
+                                <td><?php echo htmlspecialchars($data['judul']); ?></td>
+                                <td><?php echo htmlspecialchars($data['nama_kategori']); ?></td>
+                                <td><?php echo htmlspecialchars(bersihkanHTML($data['isi'], 90)); ?></td>
                                 <td>
                                     <?php if ($data['gambar']): ?>
-                                        <img src="../css/image/<?php echo $data['gambar']; ?>" class="article-image">
+                                        <img src="../css/image/<?php echo htmlspecialchars($data['gambar']); ?>" class="article-image" alt="<?php echo htmlspecialchars($data['judul']); ?>">
                                     <?php else: ?>
                                         <span class="text-muted">Tidak ada gambar</span>
                                     <?php endif; ?>
@@ -240,16 +288,18 @@ function bersihkanHTML($konten, $panjang) {
                                 <td>
                                     <div class="btn-action">
                                         <form method="post" style="display:inline;">
-                                            <input type="hidden" name="artikel_id" value="<?php echo $data['id']; ?>">
-                                            <button type="submit" name="unarchive" class="btn-warning btn-sm" onclick="return confirm('Are you sure you want to unarchive this article?')">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                                            <input type="hidden" name="artikel_id" value="<?php echo intval($data['id']); ?>">
+                                            <button type="submit" name="unarchive" class="btn-warning btn-sm" onclick="return confirm('Apakah Anda yakin ingin membatalkan arsip artikel ini?')">
                                                 Batal Arsip
                                             </button>
                                         </form>
                                     </div>
                                     <div class="btn-action">
                                         <form method="post" style="display:inline;">
-                                            <input type="hidden" name="artikel_id" value="<?php echo $data['id']; ?>">
-                                            <button type="submit" name="delete" class="btn-danger btn-sm" onclick="return confirm('Are you sure you want to delete this article?')">
+                                            <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+                                            <input type="hidden" name="artikel_id" value="<?php echo intval($data['id']); ?>">
+                                            <button type="submit" name="delete" class="btn-danger btn-sm" onclick="return confirm('Apakah Anda yakin ingin menghapus artikel ini?')">
                                                 Hapus
                                             </button>
                                         </form>
