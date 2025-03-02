@@ -9,16 +9,28 @@
 // Mengimpor file koneksi.php
 require "../inc/koneksi.php";
 
+// Fungsi untuk menghasilkan CSRF token
+function generateCSRFToken() {
+  if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+  }
+  return $_SESSION['csrf_token'];
+}
 
-// Mendapatkan nilai parameter GET 'p'
-$id = $_GET['p'];
+// Fungsi untuk validasi CSRF token
+function validateCSRFToken($token) {
+  if (!isset($_SESSION['csrf_token']) || $token !== $_SESSION['csrf_token']) {
+    die('CSRF token tidak valid. Akses ditolak!');
+  }
+}
 
-// Mengambil data artikel berdasarkan id dan melakukan JOIN dengan tabel kategori untuk mendapatkan nama kategori
-$query = mysqli_query($conn, "SELECT a.*, b.nama AS nama_kategori FROM artikel a JOIN kategori b ON a.kategori_id=b.id WHERE a.id='$id'");
-$data = mysqli_fetch_array($query);
-
-// Mengambil data kategori selain kategori artikel yang sedang dipilih
-$queryKategori = mysqli_query($conn, "SELECT * FROM kategori WHERE id!='$data[kategori_id]'");
+// Fungsi untuk validasi input
+function validateInput($data) {
+  $data = trim($data);
+  $data = stripslashes($data);
+  $data = htmlspecialchars($data);
+  return $data;
+}
 
 // Fungsi untuk menghasilkan string acak
 function generateRandomString($length = 10)
@@ -32,44 +44,95 @@ function generateRandomString($length = 10)
   return $randomthing;
 }
 
+// Validasi parameter GET 'p'
+if (!isset($_GET['p']) || empty($_GET['p'])) {
+  header("Location: artikel.php");
+  exit();
+}
+
+// Sanitasi parameter GET 'p'
+$id = validateInput($_GET['p']);
+
+// Validasi ID hanya berisi angka
+if (!is_numeric($id)) {
+  header("Location: artikel.php");
+  exit();
+}
+
+// Menggunakan prepared statement untuk mengambil data artikel
+$query = $conn->prepare("SELECT a.*, b.nama AS nama_kategori FROM artikel a JOIN kategori b ON a.kategori_id=b.id WHERE a.id=?");
+$query->bind_param("i", $id);
+$query->execute();
+$result = $query->get_result();
+$data = $result->fetch_assoc();
+
+// Jika artikel tidak ditemukan, redirect ke halaman artikel
+if (!$data) {
+  header("Location: artikel.php");
+  exit();
+}
+
+// Menggunakan prepared statement untuk mengambil data kategori
+$queryKategori = $conn->prepare("SELECT * FROM kategori WHERE id!=?");
+$queryKategori->bind_param("i", $data['kategori_id']);
+$queryKategori->execute();
+$resultKategori = $queryKategori->get_result();
+
+// Generate CSRF token
+$csrf_token = generateCSRFToken();
+
 // Memeriksa apakah tombol "Simpan" diklik
 if (isset($_POST['simpan'])) {
-  $judul = htmlspecialchars($_POST['judul']);
-  $kategori = htmlspecialchars($_POST['kategori']);
-  $isi = htmlspecialchars($_POST['isi']);
-  $sinopsis = htmlspecialchars($_POST['sinopsis']);
-
-  if ($judul == '' || $kategori == '' || $isi == '' || $sinopsis == '') {
-    // Jika ada kolom yang kosong, tampilkan pesan kesalahan
-    $pesan = 'Tidak Boleh Ada Yang Kosong';
+  // Validasi CSRF token
+  if (!isset($_POST['csrf_token']) || !validateCSRFToken($_POST['csrf_token'])) {
+    $pesan = 'CSRF token tidak valid. Akses ditolak!';
   } else {
-    // Proses penyimpanan data artikel
-    $queryUpdate = mysqli_query($conn, "UPDATE artikel SET kategori_id='$kategori', judul='$judul', isi='$isi', sinopsis='$sinopsis' WHERE id='$id'");
+    $judul = validateInput($_POST['judul']);
+    $kategori = validateInput($_POST['kategori']);
+    $isi = $_POST['isi']; // Mengizinkan HTML dari CKEditor
+    $sinopsis = validateInput($_POST['sinopsis']);
 
-    if ($queryUpdate) {
-      // Jika berhasil diperbarui, tampilkan pesan sukses
-      $pesan = 'Artikel Berhasil Diupdate';
+    if ($judul == '' || $kategori == '' || $isi == '' || $sinopsis == '') {
+      // Jika ada kolom yang kosong, tampilkan pesan kesalahan
+      $pesan = 'Tidak Boleh Ada Yang Kosong';
     } else {
-      // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
-      $pesan = 'Terjadi kesalahan saat mengupdate data artikel: ' . mysqli_error($conn);
+      // Proses penyimpanan data artikel menggunakan prepared statement
+      $queryUpdate = $conn->prepare("UPDATE artikel SET kategori_id=?, judul=?, isi=?, sinopsis=? WHERE id=?");
+      $queryUpdate->bind_param("isssi", $kategori, $judul, $isi, $sinopsis, $id);
+      $queryUpdate->execute();
+
+      if ($queryUpdate->affected_rows > 0) {
+        // Jika berhasil diperbarui, tampilkan pesan sukses
+        $pesan = 'Artikel Berhasil Diupdate';
+      } else {
+        // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
+        $pesan = 'Terjadi kesalahan saat mengupdate data artikel: ' . $conn->error;
+      }
     }
   }
 }
 
 // Memeriksa apakah tombol "Hapus" diklik
 if (isset($_POST['hapus'])) {
-  // Hapus data artikel
-  $queryHapus = mysqli_query($conn, "DELETE FROM artikel WHERE id='$id'");
-
-  if ($queryHapus) {
-    // Jika berhasil dihapus, tampilkan pesan sukses
-    $pesan = 'Artikel Berhasil Dihapus';
-    // Redirect ke halaman artikel
-    header("Location: artikel.php");
-    exit();
+  // Validasi CSRF token
+  if (!isset($_POST['csrf_token']) || !validateCSRFToken($_POST['csrf_token'])) {
+    $pesan = 'CSRF token tidak valid. Akses ditolak!';
   } else {
-    // Jika terjadi kesalahan saat menghapus data, tampilkan pesan error
-    $pesan = 'Terjadi kesalahan saat menghapus data artikel: ' . mysqli_error($conn);
+    // Hapus data artikel menggunakan prepared statement
+    $queryHapus = $conn->prepare("DELETE FROM artikel WHERE id=?");
+    $queryHapus->bind_param("i", $id);
+    $queryHapus->execute();
+
+    if ($queryHapus->affected_rows > 0) {
+      // Jika berhasil dihapus, tampilkan pesan sukses
+      $pesan = 'Artikel Berhasil Dihapus';
+      // Redirect ke halaman artikel
+      header("Location: artikel.php");
+      exit();
+    } else {
+      // Jika terjadi kesalahan saat menghapus data, tampilkan pesan error
+      $pesan = 'Terjadi kesalahan saat menghapus data artikel: ' . $conn->error;
+    }
   }
 }
 ?>
@@ -131,18 +194,21 @@ if (isset($_POST['hapus'])) {
 
     <div class="col-12 col-md-6 mb-5">
       <form action="" method="post" enctype="multipart/form-data">
+        <!-- CSRF token hidden field -->
+        <input type="hidden" name="csrf_token" value="<?php echo $csrf_token; ?>">
+        
         <div>
           <label for="judul">Judul</label>
-          <input type="text" name="judul" id="judul" class="form-control" value="<?php echo $data['judul']; ?>">
+          <input type="text" name="judul" id="judul" class="form-control" value="<?php echo htmlspecialchars($data['judul']); ?>">
         </div>
         <div>
           <label for="kategori">Kategori</label>
           <select name="kategori" id="kategori" class="form-control">
-            <option value="<?php echo $data['kategori_id'] ?>"><?php echo $data['nama_kategori'] ?></option>
+            <option value="<?php echo htmlspecialchars($data['kategori_id']); ?>"><?php echo htmlspecialchars($data['nama_kategori']); ?></option>
             <?php
-            while ($dataKategori = mysqli_fetch_array($queryKategori)) {
+            while ($dataKategori = $resultKategori->fetch_assoc()) {
             ?>
-              <option value="<?php echo $dataKategori['id']; ?>"><?php echo $dataKategori['nama']; ?></option>
+              <option value="<?php echo htmlspecialchars($dataKategori['id']); ?>"><?php echo htmlspecialchars($dataKategori['nama']); ?></option>
             <?php
             }
             ?>
@@ -150,15 +216,15 @@ if (isset($_POST['hapus'])) {
         </div>
         <div>
           <label for="editor">Isi</label>
-          <textarea class="form-control" id="editor" name="isi" rows="10"><?php echo $data['isi']; ?></textarea>
+          <textarea class="form-control" id="editor" name="isi" rows="10"><?php echo htmlspecialchars($data['isi']); ?></textarea>
         </div>
         <div>
           <label for="sinopsis">Sinopsis</label>
-          <textarea class="form-control" id="sinopsis" name="sinopsis" rows="3"><?php echo $data['sinopsis']; ?></textarea>
+          <textarea class="form-control" id="sinopsis" name="sinopsis" rows="3"><?php echo htmlspecialchars($data['sinopsis']); ?></textarea>
         </div>
         <div>
           <label for="currentFoto">Foto Produk</label>
-          <img src="../css/image/<?php echo $data['gambar'] ?>" width="160" alt="">
+          <img src="../css/image/<?php echo htmlspecialchars($data['gambar']); ?>" width="160" alt="">
         </div>
         <div>
           <label for="gambar">Gambar</label>
@@ -166,67 +232,82 @@ if (isset($_POST['hapus'])) {
         </div>
         <div>
           <button type="submit" class="btn btn-primary" name="simpan">Simpan</button>
-          <button type="submit" class="btn btn-danger" name="hapus">Hapus</button>
+          <button type="submit" class="btn btn-danger" name="hapus" onclick="return confirm('Anda yakin ingin menghapus artikel ini?');">Hapus</button>
         </div>
       </form>
       <?php 
       // Memeriksa apakah tombol "Simpan" diklik
       if (isset($_POST['simpan'])) {
-        $judul = htmlspecialchars($_POST['judul']);
-        $kategori = htmlspecialchars($_POST['kategori']);
-        $isi = $_POST['isi'];
-        $sinopsis = htmlspecialchars($_POST['sinopsis']);
-
-        $target_dir = "../css/image/";
-        $nama_file = basename($_FILES["gambar"]["name"]);
-        $target_file = $target_dir . $nama_file;
-        $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
-        $image_size = $_FILES["gambar"]["size"];
-        $random_name = generateRandomString(15);
-        $new_name = $random_name . "." . $imageFileType;
-
-        if ($judul == '' || $kategori == '' || $isi == '' || $sinopsis == '') {
-          // Jika ada kolom yang kosong, tampilkan pesan kesalahan
-          echo '<div class="alert alert-warning mt-3" role="alert">Tidak Boleh Ada Yang Kosong</div>';
+        // Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+          echo '<div class="alert alert-danger mt-3" role="alert">CSRF token tidak valid. Akses ditolak!</div>';
         } else {
-          // Cek apakah terdapat perubahan pada gambar
-          if ($_FILES["gambar"]["error"] === 0) {
-            if ($image_size > 4000000) {
-              // Jika ukuran gambar melebihi batas maksimum
-              echo '<div class="alert alert-warning mt-3" role="alert">File tidak boleh lebih dari 4mb</div>';
-            } else {
-              if ($imageFileType != 'jpg' && $imageFileType != 'png' && $imageFileType != 'gif') {
+          $judul = validateInput($_POST['judul']);
+          $kategori = validateInput($_POST['kategori']);
+          $isi = $_POST['isi']; // Mengizinkan HTML dari CKEditor
+          $sinopsis = validateInput($_POST['sinopsis']);
+
+          $target_dir = "../css/image/";
+          
+          if ($judul == '' || $kategori == '' || $isi == '' || $sinopsis == '') {
+            // Jika ada kolom yang kosong, tampilkan pesan kesalahan
+            echo '<div class="alert alert-warning mt-3" role="alert">Tidak Boleh Ada Yang Kosong</div>';
+          } else {
+            // Cek apakah terdapat perubahan pada gambar
+            if ($_FILES["gambar"]["error"] === 0) {
+              $nama_file = basename($_FILES["gambar"]["name"]);
+              $image_size = $_FILES["gambar"]["size"];
+              $imageFileType = strtolower(pathinfo($nama_file, PATHINFO_EXTENSION));
+              $random_name = generateRandomString(15);
+              $new_name = $random_name . "." . $imageFileType;
+              $target_file = $target_dir . $new_name;
+              
+              // Validasi ukuran file
+              if ($image_size > 4000000) {
+                // Jika ukuran gambar melebihi batas maksimum
+                echo '<div class="alert alert-warning mt-3" role="alert">File tidak boleh lebih dari 4mb</div>';
+              } 
+              // Validasi tipe file
+              else if ($imageFileType != 'jpg' && $imageFileType != 'png' && $imageFileType != 'gif') {
                 // Jika tipe file gambar tidak sesuai dengan yang diizinkan (jpg, png, gif)
                 echo '<div class="alert alert-warning mt-3" role="alert">File wajib bertipe jpg, png, atau gif</div>';
-              } else {
+              } 
+              else {
                 // Pindahkan file gambar ke direktori tujuan
-                move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name);
-                // Perbarui data artikel termasuk gambar baru
-                $queryUpdate = mysqli_query($conn, "UPDATE artikel SET kategori_id='$kategori', judul='$judul', isi='$isi', sinopsis='$sinopsis', gambar='$new_name' WHERE id='$id'");
+                if (move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_file)) {
+                  // Perbarui data artikel termasuk gambar baru menggunakan prepared statement
+                  $queryUpdate = $conn->prepare("UPDATE artikel SET kategori_id=?, judul=?, isi=?, sinopsis=?, gambar=? WHERE id=?");
+                  $queryUpdate->bind_param("issssi", $kategori, $judul, $isi, $sinopsis, $new_name, $id);
+                  $queryUpdate->execute();
 
-                if ($queryUpdate) {
-                  // Jika berhasil diperbarui, tampilkan pesan sukses
-                  echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Diupdate</div>';
-                  // Redirect ke halaman artikel
-                  echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
+                  if ($queryUpdate->affected_rows > 0) {
+                    // Jika berhasil diperbarui, tampilkan pesan sukses
+                    echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Diupdate</div>';
+                    // Redirect ke halaman artikel
+                    echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
+                  } else {
+                    // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
+                    echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat mengupdate data artikel: ' . $conn->error . '</div>';
+                  }
                 } else {
-                  // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
-                  echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat mengupdate data artikel: ' . mysqli_error($conn) . '</div>';
+                  echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat upload file</div>';
                 }
               }
-            }
-          } else {
-            // Jika tidak ada perubahan pada gambar, perbarui data artikel tanpa mengubah gambar
-            $queryUpdate = mysqli_query($conn, "UPDATE artikel SET kategori_id='$kategori', judul='$judul', isi='$isi', sinopsis='$sinopsis' WHERE id='$id'");
-
-            if ($queryUpdate) {
-              // Jika berhasil diperbarui, tampilkan pesan sukses
-              echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Diupdate</div>';
-              // Redirect ke halaman artikel
-              echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
             } else {
-              // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
-              echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat mengupdate data artikel: ' . mysqli_error($conn) . '</div>';
+              // Jika tidak ada perubahan pada gambar, perbarui data artikel tanpa mengubah gambar
+              $queryUpdate = $conn->prepare("UPDATE artikel SET kategori_id=?, judul=?, isi=?, sinopsis=? WHERE id=?");
+              $queryUpdate->bind_param("isssi", $kategori, $judul, $isi, $sinopsis, $id);
+              $queryUpdate->execute();
+
+              if ($queryUpdate->affected_rows >= 0) {
+                // Jika berhasil diperbarui, tampilkan pesan sukses
+                echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Diupdate</div>';
+                // Redirect ke halaman artikel
+                echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
+              } else {
+                // Jika terjadi kesalahan saat memperbarui data, tampilkan pesan error
+                echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat mengupdate data artikel: ' . $conn->error . '</div>';
+              }
             }
           }
         }
@@ -234,17 +315,24 @@ if (isset($_POST['hapus'])) {
 
       // Memeriksa apakah tombol "Hapus" diklik
       if (isset($_POST['hapus'])) {
-        // Hapus data artikel
-        $queryHapus = mysqli_query($conn, "DELETE FROM artikel WHERE id='$id'");
-
-        if ($queryHapus) {
-          // Jika berhasil dihapus, tampilkan pesan sukses
-          echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Dihapus</div>';
-          // Redirect ke halaman artikel
-          echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
+        // Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+          echo '<div class="alert alert-danger mt-3" role="alert">CSRF token tidak valid. Akses ditolak!</div>';
         } else {
-          // Jika terjadi kesalahan saat menghapus data, tampilkan pesan error
-          echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat menghapus data artikel: ' . mysqli_error($conn) . '</div>';
+          // Hapus data artikel menggunakan prepared statement
+          $queryHapus = $conn->prepare("DELETE FROM artikel WHERE id=?");
+          $queryHapus->bind_param("i", $id);
+          $queryHapus->execute();
+
+          if ($queryHapus->affected_rows > 0) {
+            // Jika berhasil dihapus, tampilkan pesan sukses
+            echo '<div class="alert alert-primary mt-3" role="alert">Artikel Berhasil Dihapus</div>';
+            // Redirect ke halaman artikel
+            echo '<meta http-equiv="refresh" content="1; url=artikel.php">';
+          } else {
+            // Jika terjadi kesalahan saat menghapus data, tampilkan pesan error
+            echo '<div class="alert alert-danger mt-3" role="alert">Terjadi kesalahan saat menghapus data artikel: ' . $conn->error . '</div>';
+          }
         }
       }
       ?>

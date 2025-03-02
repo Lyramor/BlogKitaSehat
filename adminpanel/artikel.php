@@ -6,36 +6,56 @@
     exit();
   }
 
-  // mengimpor file koneksi
-require "../inc/koneksi.php";
-
-// mengimpor file function
-require "../inc/functions.php";
-
-// Mengambil semua artikel
-$artikel = query("SELECT * FROM artikel ORDER BY kategori_id DESC");
-
-// Mengambil data artikel dengan kategori yang terkait
-$query = mysqli_query($conn, "SELECT a.*, b.nama AS nama_kategori FROM artikel a JOIN kategori b ON a.kategori_id=b.id");
-
-// Menghitung jumlah artikel
-$jumlahArtikel = mysqli_num_rows($query);
-
-// Mengambil semua kategori
-$queryKategori = mysqli_query($conn, "SELECT * FROM kategori");
-
-// Fungsi untuk menghasilkan string acak
-function generateRandomString($length = 10)
-{
-  $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
-  $charactersLength = strlen($characters);
-  $randomthing = '';
-  for ($i = 0; $i < $length; $i++) {
-    $randomthing .= $characters[rand(0, $charactersLength - 1)];
+  // Menghasilkan CSRF token jika belum ada
+  if (!isset($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
   }
-  return $randomthing;
-}
 
+  // mengimpor file koneksi
+  require "../inc/koneksi.php";
+
+  // mengimpor file function
+  require "../inc/functions.php";
+
+  // Validasi parameter GET (jika ada)
+  if (isset($_GET) && !empty($_GET)) {
+    foreach ($_GET as $key => $value) {
+      $_GET[$key] = htmlspecialchars(trim($value));
+    }
+  }
+
+  // Mengambil semua artikel dengan prepared statement
+  $stmt = $conn->prepare("SELECT * FROM artikel ORDER BY kategori_id DESC");
+  $stmt->execute();
+  $artikel = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmt->close();
+
+  // Mengambil data artikel dengan kategori yang terkait menggunakan prepared statement
+  $stmt = $conn->prepare("SELECT a.*, b.nama AS nama_kategori FROM artikel a JOIN kategori b ON a.kategori_id=b.id");
+  $stmt->execute();
+  $query = $stmt->get_result();
+  $stmt->close();
+
+  // Menghitung jumlah artikel
+  $jumlahArtikel = mysqli_num_rows($query);
+
+  // Mengambil semua kategori menggunakan prepared statement
+  $stmt = $conn->prepare("SELECT * FROM kategori");
+  $stmt->execute();
+  $queryKategori = $stmt->get_result();
+  $stmt->close();
+
+  // Fungsi untuk menghasilkan string acak
+  function generateRandomString($length = 10)
+  {
+    $characters = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    $charactersLength = strlen($characters);
+    $randomthing = '';
+    for ($i = 0; $i < $length; $i++) {
+      $randomthing .= $characters[rand(0, $charactersLength - 1)];
+    }
+    return $randomthing;
+  }
 ?>
 
 <!DOCTYPE html>
@@ -116,13 +136,17 @@ function generateRandomString($length = 10)
       <h3>Tambah Artikel</h3>
 
       <form id="form-tambah-artikel" action="" method="post" enctype="multipart/form-data">
+        <!-- CSRF Token -->
+        <input type="hidden" name="csrf_token" value="<?php echo $_SESSION['csrf_token']; ?>">
+        
         <div>
           <label for="judul">Judul</label>
-          <input type="text" id="judul" name="judul" class="form-control" autofocus autocomplete="off">
+          <input type="text" id="judul" name="judul" class="form-control" autofocus autocomplete="off" required>
+          <div class="invalid-feedback">Judul tidak boleh kosong</div>
         </div>
         <div>
           <label for="kategori">Kategori</label>
-          <select name="kategori" id="kategori" class="form-control">
+          <select name="kategori" id="kategori" class="form-control" required>
             <option value="">Pilih Satu</option>
             <?php
             while ($data = mysqli_fetch_array($queryKategori)) {
@@ -132,19 +156,22 @@ function generateRandomString($length = 10)
             }
             ?>
           </select>
+          <div class="invalid-feedback">Kategori harus dipilih</div>
         </div>
         <div>
           <label for="editor">Isi</label>
-          <textarea class="form-control" id="editor" name="isi" rows="10"></textarea>
+          <textarea class="form-control" id="editor" name="isi" rows="10" required></textarea>
+          <div class="invalid-feedback">Isi artikel tidak boleh kosong</div>
         </div>
         <div>
           <label for="sinopsis">Sinopsis</label>
-          <textarea class="form-control" id="sinopsis" name="sinopsis"
-            rows="3"></textarea>
+          <textarea class="form-control" id="sinopsis" name="sinopsis" rows="3" required></textarea>
+          <div class="invalid-feedback">Sinopsis tidak boleh kosong</div>
         </div>
         <div>
           <label for="gambar">Gambar</label>
-          <input type="file" class="form-control" id="gambar" name="gambar">
+          <input type="file" class="form-control" id="gambar" name="gambar" required>
+          <div class="invalid-feedback">Gambar harus diunggah</div>
         </div>
         <div class="mt-3">
           <button class="btn btn-primary" type="submit" name="simpan">Simpan</button>
@@ -157,59 +184,99 @@ function generateRandomString($length = 10)
 
       <?php
       if (isset($_POST['simpan'])) {
-        $judul = htmlspecialchars($_POST['judul']);
-        $kategori = htmlspecialchars($_POST['kategori']);
-        $isi = $_POST['isi'];
-        $sinopsis = htmlspecialchars($_POST['sinopsis']);
-
-        $target_dir = "../css/image/";
-        $nama_file = basename($_FILES["gambar"]["name"]);
-        $target_file = $target_dir . $nama_file;
-        $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
-        $image_size = $_FILES["gambar"]["size"];
-        $random_name = generateRandomString(15);
-        $new_name = $random_name . "." . $imageFileType;
-
-        if ($judul == '' || $kategori == '' || $isi == '' || $sinopsis == '') {
-      ?>
-          <div class="alert alert-warning mt-3" role='alert'>
-            Tidak Boleh Ada Yang Kosong
-          </div>
-          <?php
+        // Validasi CSRF token
+        if (!isset($_POST['csrf_token']) || $_POST['csrf_token'] !== $_SESSION['csrf_token']) {
+          // Token CSRF tidak valid
+          echo '<div class="alert alert-danger mt-3" role="alert">
+                  Permintaan tidak valid. Silakan coba lagi.
+                </div>';
+          exit;
+        }
+        
+        // Validasi input form
+        $error = false;
+        $errorMsg = [];
+        
+        // Sanitasi dan validasi input
+        $judul = trim($_POST['judul']);
+        $kategori = trim($_POST['kategori']);
+        $isi = trim($_POST['isi']);
+        $sinopsis = trim($_POST['sinopsis']);
+        
+        if (empty($judul)) {
+          $error = true;
+          $errorMsg[] = "Judul tidak boleh kosong";
+        }
+        
+        if (empty($kategori)) {
+          $error = true;
+          $errorMsg[] = "Kategori harus dipilih";
+        }
+        
+        if (empty($isi)) {
+          $error = true;
+          $errorMsg[] = "Isi artikel tidak boleh kosong";
+        }
+        
+        if (empty($sinopsis)) {
+          $error = true;
+          $errorMsg[] = "Sinopsis tidak boleh kosong";
+        }
+        
+        // Validasi file gambar
+        $new_name = "";
+        if (isset($_FILES['gambar']) && $_FILES['gambar']['error'] != 4) {
+          $target_dir = "../css/image/";
+          $nama_file = basename($_FILES["gambar"]["name"]);
+          $target_file = $target_dir . $nama_file;
+          $imageFileType = strtolower(pathinfo($target_file, PATHINFO_EXTENSION));
+          $image_size = $_FILES["gambar"]["size"];
+          $random_name = generateRandomString(15);
+          $new_name = $random_name . "." . $imageFileType;
+          
+          // Validasi ukuran file
+          if ($image_size > 4000000) {
+            $error = true;
+            $errorMsg[] = "File tidak boleh lebih dari 4mb";
+          }
+          
+          // Validasi ekstensi file
+          if ($imageFileType != 'jpg' && $imageFileType != 'png' && $imageFileType != 'gif') {
+            $error = true;
+            $errorMsg[] = "File wajib bertipe jpg, png, atau gif";
+          }
         } else {
-          if ($nama_file != '') {
-            if ($image_size > 4000000) {
-          ?>
-              <div class="alert alert-warning mt-3" role='alert'>
-                File tidak boleh lebih dari 4mb
-              </div>
-            <?php
-            } else {
-              if ($imageFileType != 'jpg' && $imageFileType != 'png' && $imageFileType != 'gif') {
-            ?>
-                <div class="alert alert-warning mt-3" role='alert'>
-                  File wajib bertipe jpg, png, atau gif
-                </div>
-              <?php
-              } else {
-                move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name);
-              }
-            }
+          $error = true;
+          $errorMsg[] = "Gambar harus diunggah";
+        }
+        
+        // Tampilkan error jika ada
+        if ($error) {
+          echo '<div class="alert alert-warning mt-3" role="alert">';
+          foreach ($errorMsg as $msg) {
+            echo $msg . '<br>';
           }
-
-          // Query insert
-          $queryTambah = mysqli_query($conn, "INSERT INTO `artikel` (`kategori_id`, `judul`, `isi`, `sinopsis`, `gambar`) VALUES ('$kategori', '$judul', '$isi', '$sinopsis', '$new_name')");
-
-          if ($queryTambah) {
-              ?>
-              <div class="alert alert-primary mt-3" role="alert">
-                Artikel berhasil disimpan
-              </div>
-              <meta http-equiv="refresh" content="2; url=artikel.php">
-            <?php
+          echo '</div>';
+        } else {
+          // Upload file gambar
+          move_uploaded_file($_FILES["gambar"]["tmp_name"], $target_dir . $new_name);
+          
+          // Simpan data artikel dengan prepared statement
+          $stmt = $conn->prepare("INSERT INTO artikel (kategori_id, judul, isi, sinopsis, gambar) VALUES (?, ?, ?, ?, ?)");
+          $stmt->bind_param("issss", $kategori, $judul, $isi, $sinopsis, $new_name);
+          
+          if ($stmt->execute()) {
+            echo '<div class="alert alert-primary mt-3" role="alert">
+                    Artikel berhasil disimpan
+                  </div>';
+            echo '<meta http-equiv="refresh" content="2; url=artikel.php">';
           } else {
-            echo mysqli_error($conn);
+            echo '<div class="alert alert-danger mt-3" role="alert">
+                    Error: ' . $stmt->error . '
+                  </div>';
           }
+          
+          $stmt->close();
         }
       }
       ?>
@@ -245,12 +312,12 @@ function generateRandomString($length = 10)
               ?>
                 <tr>
                   <td><?php echo $nomor; ?></td>
-                  <td><?php echo $data['judul']; ?></td>
-                  <td><?php echo $data['nama_kategori']; ?></td>
-                  <td><?php echo $data['isi']; ?></td>
-                  <td><?php echo $data['sinopsis']; ?></td>
-                  <td><img src="../css/image/<?php echo $data['gambar']; ?>" alt="" width="120"></td>
-                  <td><a href="artikel-detail.php?p=<?php echo $data['id']; ?>" class="btn btn-info"><i class="fas fa-search"></i></a></td>
+                  <td><?php echo htmlspecialchars($data['judul']); ?></td>
+                  <td><?php echo htmlspecialchars($data['nama_kategori']); ?></td>
+                  <td><?php echo htmlspecialchars(substr($data['isi'], 0, 100)) . '...'; ?></td>
+                  <td><?php echo htmlspecialchars($data['sinopsis']); ?></td>
+                  <td><img src="../css/image/<?php echo htmlspecialchars($data['gambar']); ?>" alt="" width="120"></td>
+                  <td><a href="artikel-detail.php?p=<?php echo htmlspecialchars($data['id']); ?>" class="btn btn-info"><i class="fas fa-search"></i></a></td>
                 </tr>
               <?php
                 $nomor++;
@@ -261,16 +328,36 @@ function generateRandomString($length = 10)
         </table>
       </div>
     </div>
-      <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"
-        integrity="sha384-ENjdO4Dr2bkBIFxQpeoTz1HIcje39Wm4jDKdf19U8gI4ddQ3GYNS7NTKfAdVQSZe"
-        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha3/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-ENjdO4Dr2bkBIFxQpeoTz1HIcje39Wm4jDKdf19U8gI4ddQ3GYNS7NTKfAdVQSZe"
+      crossorigin="anonymous"></script>
     <script src="https://cdn.ckeditor.com/ckeditor5/28.0.0/classic/ckeditor.js"></script>
     <script>
-        ClassicEditor
-            .create(document.querySelector('#editor'))
-            .catch(error => {
-                console.error(error);
-            });
+      ClassicEditor
+          .create(document.querySelector('#editor'))
+          .catch(error => {
+              console.error(error);
+          });
+          
+      // Validasi form client-side
+      (function() {
+        'use strict';
+        
+        // Fetch all forms we want to apply validation styles to
+        var forms = document.querySelectorAll('.needs-validation');
+        
+        // Loop over them and prevent submission
+        Array.from(forms).forEach(function(form) {
+          form.addEventListener('submit', function(event) {
+            if (!form.checkValidity()) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+            
+            form.classList.add('was-validated');
+          }, false);
+        });
+      })();
     </script>
 </body>
 
