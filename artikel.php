@@ -51,8 +51,8 @@ $countData = mysqli_num_rows($resultArtikel);
     crossorigin="anonymous" referrerpolicy="no-referrer" />
 
   <!-- css -->
-  <link rel="stylesheet" href="css/style3.css">
-  <link rel="stylesheet" href="css/artikel.css">
+  <link rel="stylesheet" href="css/style2.css">
+  <link rel="stylesheet" href="css/artikel1.css">
 
   <title>KitaSehat | Artikel lainnya</title>
 </head>
