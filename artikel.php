@@ -83,7 +83,7 @@ $countData = mysqli_num_rows($resultArtikel);
       if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
           // Periksa apakah ada role yang diset dalam session
           if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
-              echo '<a href="postingan.php">Postingan</a>';
+              echo '<a href="postingan/">Postingan</a>';
           }
           
           echo '<a href="profile.php" id="login">Profile</a>';

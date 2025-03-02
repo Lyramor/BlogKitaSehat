@@ -184,14 +184,11 @@ try {
         <a href="index.php#layanan">About Us</a>
         <a href="index.php#artikel">Artikel</a>
         <a href="index.php#kontak">Kontak</a>
-        <?php
-        if (session_status() == PHP_SESSION_NONE) {
-            session_start();    
-            // Cek apakah sudah login berdasarkan session
+        <?php   
             if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
                 // Periksa apakah ada role yang diset dalam session
                 if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
-                    echo '<a href="postingan.php">Postingan</a>';
+                    echo '<a href="postingan/">Postingan</a>';
                 }
                 
                 echo '<a href="profile.php" id="login">Profile</a>';
@@ -199,7 +196,6 @@ try {
                 // Jika belum login, tampilkan tombol Login
                 echo '<a href="login.php" id="login">Login</a>';
             }
-        }
         ?>
         </div>
         <div class="hamburger">
