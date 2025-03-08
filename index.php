@@ -31,7 +31,7 @@
 
     <!-- css -->
     <link rel="stylesheet" href="css/style2.css">
-    <link rel="stylesheet" href="css/artikel.css">
+    <link rel="stylesheet" href="css/artikel1.css">
     <title>KitaSehat</title>
 </head>
 
@@ -42,21 +42,32 @@
             Kita<span>Sehat</span>.
         </a>
 
-        <div class="navbar-nav">
-            <a href="#beranda">Beranda</a>
-            <a href="#layanan">About Us</a>
-            <a href="#artikel">Artikel</a>
-            <a href="#kontak">Kontak</a>
-            <?php   
-                if (isset($_SESSION['username'])) {
-                    // Jika pengguna sudah login, tampilkan tombol Logout
-                    echo '<a href="profile.php" id="login">Profile</a>';
-                } else {
-                    // Jika pengguna belum login, tampilkan tombol Masuk
-                    echo '<a href="login.php" id="login">Login</a>';
-                }
-            ?>
-        </div>
+    <div class="navbar-nav">
+    <a href="#beranda">Beranda</a>
+    <a href="#layanan">About</a>
+    <a href="#artikel">Artikel</a>
+    <a href="#kontak">Kontak</a>
+    <?php
+    // Cek apakah session sudah dimulai
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+
+    // Cek apakah sudah login berdasarkan session
+    if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
+        // Periksa apakah ada role yang diset dalam session
+        if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
+            echo '<a href="postingan.php">Postingan</a>';
+        }
+        // Tampilkan tombol Logout jika sudah login
+        echo '<a href="logout.php" id="login">Logout</a>';
+    } else {
+        // Jika belum login, tampilkan tombol Login
+        echo '<a href="login.php" id="login">Login</a>';
+    }
+    ?>
+</div>
+
 
 
         <div class="hamburger">
@@ -89,7 +100,7 @@
     <div class="tentang">
         <div class="tentang-kami">
             <p>Selamat datang di Website Kesehatan!</p>
-            <p> ini didedikasikan untuk menyediakan artikel-artikel kesehatan yang dapat membantu Anda
+            <p> Ini didedikasikan untuk menyediakan artikel-artikel kesehatan yang dapat membantu Anda
                 menjaga
                 kesehatan dan kebugaran tubuh. Dalam artikel-artikel ini, Anda akan menemukan berbagai informasi terkait
                 kesehatan, gaya hidup sehat, tips dan trik, serta berita terkini dalam dunia kesehatan.</p>

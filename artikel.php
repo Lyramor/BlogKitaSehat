@@ -59,20 +59,26 @@ $countData = mysqli_num_rows($queryArtikel);
     </div>
 
     <div class="navbar-nav">
-      <a href="index.php">Beranda</a>
-      <a href="index.php">About Me</a>
-      <a href="index.php">Artikel</a>
-      <a href="index.php">Kontak</a>
+      <a href="index.php#beranda">Beranda</a>
+      <a href="index.php#layanan">About</a>
+      <a href="index.php#artikel">Artikel</a>
+      <a href="index.php#kontak">Kontak</a>
       <?php
-      session_start();
+      if (session_status() == PHP_SESSION_NONE) {
+        session_start();    
       // Cek apakah sudah login berdasarkan session
       if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
-          // Jika pengguna sudah login, tampilkan tombol Logout
+          // Periksa apakah ada role yang diset dalam session
+          if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
+              echo '<a href="postingan.php">Postingan</a>';
+          }
+          // Tampilkan tombol Logout jika sudah login
           echo '<a href="logout.php" id="login">Logout</a>';
       } else {
-          // Jika pengguna belum login, tampilkan tombol Masuk
+          // Jika belum login, tampilkan tombol Login
           echo '<a href="login.php" id="login">Login</a>';
       }
+    }
       ?>
     </div>
 

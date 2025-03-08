@@ -192,20 +192,27 @@ if (isset($_POST['change_password'])) {
         </a>
 
         <div class="navbar-nav">
-        <a href="index.php#beranda">Beranda</a>
-        <a href="index.php#layanan">About Us</a>
-        <a href="index.php#artikel">Artikel</a>
-        <a href="index.php#kontak">Kontak</a>
-            <?php   
-                if (isset($_SESSION['username'])) {
-                    // Jika pengguna sudah login, tampilkan tombol Logout
-                    echo '<a href="logout.php" id="login">Logout</a>';
-                } else {
-                    // Jika pengguna belum login, tampilkan tombol Masuk
-                    echo '<a href="login.php" id="login">Login</a>';
-                }
-            ?>
-        </div>
+      <a href="index.php#beranda">Beranda</a>
+      <a href="index.php#layanan">About</a>
+      <a href="index.php#artikel">Artikel</a>
+      <a href="index.php#kontak">Kontak</a>
+      <?php
+      if (session_status() == PHP_SESSION_NONE) {
+        session_start();    
+      // Cek apakah sudah login berdasarkan session
+      if (isset($_SESSION['login']) && $_SESSION['login'] === true) {
+          // Periksa apakah ada role yang diset dalam session
+          if (isset($_SESSION['role']) && $_SESSION['role'] === 'penulis') {
+              echo '<a href="postingan.php">Postingan</a>';
+          }
+          // Tampilkan tombol Logout jika sudah login
+          echo '<a href="logout.php" id="login">Logout</a>';
+      } else {
+          // Jika belum login, tampilkan tombol Login
+          echo '<a href="login.php" id="login">Login</a>';
+      }
+    }
+      ?>
 
 
         <div class="hamburger">
