@@ -43,7 +43,7 @@
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav">
         <li class="nav-item me-4">
-          <a class="nav-link" href="../adminpanel">Home</a>
+          <a class="nav-link" href="../adminpanel">Beranda</a>
         </li>
         <li class="nav-item me-5">
           <a class="nav-link" href="kategori.php">Kategori</a>

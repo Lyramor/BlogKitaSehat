@@ -45,7 +45,7 @@
         <div class="navbar-nav">
             <a href="#beranda">Beranda</a>
             <a href="#layanan">About Us</a>
-            <a href="#artikel">Artikel</a>
+            <a href="#artikel">Tentang Kami</a>
             <a href="#kontak">Kontak</a>
             <?php
                 // Cek apakah sudah login berdasarkan session
