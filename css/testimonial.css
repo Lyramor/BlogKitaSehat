@@ -1,0 +1,337 @@
+/* navbar search */
+.navbar .search-box {
+  flex: 1;
+  position: relative;
+}
+
+.navbar .hamburger a {
+  color: black;
+}
+
+.search-box input {
+  border: none;
+  outline: none;
+  width: 90%;
+  height: 40px;
+  box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.5);
+  color: gray;
+  border-radius: 2rem;
+  margin-left: 3rem;
+  text-align: center;
+  opacity: 0.5;
+}
+
+.search-box button {
+  cursor: pointer;
+  width: 40px;
+  height: 40px;
+  border-radius: 30px;
+  border: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  transform: scale(0.9);
+  background-color: var(--primary);
+  margin-right: 0.3rem;
+}
+
+/* kategori */
+.kategori {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 2rem;
+  justify-content: space-evenly;
+}
+
+.kategori .sub-kategori {
+  border: 3px solid var(--primary);
+  background-color: var(--primary);
+  border-radius: 15px;
+  padding: 1.2rem 2rem;
+  margin: 1rem 1rem;
+}
+
+.kategori a {
+  text-decoration: none;
+  color: white;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.kategori a:hover {
+  box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.5);
+  transition: 0.2s;
+}
+
+/* About Me Section */
+.tentang {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 30vh;
+  margin-bottom: 1rem;
+  width: 1100px;
+  margin-left: 50%;
+  margin-top: 10rem;
+  transform: translate(-50%, -50%);
+}
+
+.tentang-kami {
+  margin-top: 4rem;
+}
+
+.tentang p {
+  color: var(--sec);
+  text-align: center;
+  line-height: 1.5rem;
+  font-weight: 700;
+  font-size: 1.3rem;
+  margin-top: 1rem;
+}
+
+.selebihnya {
+  display: flex;
+  justify-content: center;
+  margin-top: 2rem;
+}
+
+.selebihnya a {
+  text-decoration: none;
+  display: inline-block;
+  padding: 0.7rem 1.2rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--bg);
+  background-color: var(--primary);
+  border: 4px solid var(--primary);
+  border-radius: 5px;
+}
+
+.selebihnya a:hover {
+  box-shadow: 0 0 8px 0 rgba(0, 0, 0, 0.5);
+  transition: 0.2s;
+}
+
+.detail-testimonial {
+  margin-top: 10rem;
+  display: flex;
+  justify-content: center;
+}
+
+.detail-testimonial h3 {
+  color: black;
+  font-size: 1.4rem;
+}
+
+.container-main {
+  display: inline-block;
+  margin-top: 5rem;
+}
+
+.main {
+  width: 70%;
+  margin: 0 auto;
+}
+
+.main p {
+  color: black;
+  margin-top: 1rem;
+  font-size: 1.1rem;
+}
+
+/* Testimonial Section */
+.testimonial-section {
+  width: 70%;
+  margin: 2rem auto;
+}
+
+.form-testimonial {
+  margin-bottom: 2rem;
+}
+
+.form-testimonial input,
+.form-testimonial textarea {
+  width: 100%;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--primary);
+  border-radius: 5px;
+  color: black;
+}
+
+.form-testimonial button {
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.daftar-testimonial .testimonial {
+  display: flex;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid #ddd;
+}
+
+.testimonial-profil {
+  margin-right: 1rem;
+  text-align: center;
+}
+
+.testimonial-profil img {
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.testimonial-isi {
+  flex-grow: 1;
+}
+
+.testimonial-isi p {
+  color: black;
+  margin: 0 0 0.5rem 0;
+}
+
+.testimonial-isi small {
+  color: gray;
+}
+
+.login-prompt p,
+.login-prompt a {
+  color: black;
+}
+
+.testimonial-section .form-testimonial textarea,
+.testimonial-section .form-testimonial textarea::placeholder {
+  color: black;
+}
+
+.daftar-testimonial .testimonial {
+  border-bottom: 1px solid #e0e0e0;
+  padding-bottom: 15px;
+  margin-bottom: 15px;
+}
+
+.testimonial-section .testimonial {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 20px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.testimonial-profil {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-right: 15px;
+  width: 100px;
+}
+
+.testimonial-profil img {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 10px;
+}
+
+.testimonial-profil .nama {
+  font-weight: bold;
+  text-align: center;
+  color: black;
+}
+
+.testimonial-isi {
+  flex-grow: 1;
+}
+
+.testimonial-isi p {
+  color: black;
+  margin-bottom: 10px;
+}
+
+.testimonial-isi small {
+  color: #666;
+}
+
+.testimonial-isi p {
+  color: black;
+}
+
+/* Modal Semua Testimonial */
+.modal-testimonial {
+  position: fixed;
+  z-index: 1000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  background-color: rgba(0, 0, 0, 0.4);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.modal-content {
+  background-color: white;
+  padding: 20px;
+  border-radius: 5px;
+  width: 80%;
+  max-width: 600px;
+  max-height: 70%;
+  overflow-y: auto;
+  position: relative;
+}
+
+.close-modal {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+/* Responsive Design */
+/* laptop */
+@media (max-width: 1366px) {
+  .tentang {
+    width: 700px;
+  }
+}
+
+/* tablet */
+@media (max-width: 768px) {
+  .search-box input {
+    width: 80%;
+  }
+
+  .search-box button {
+    margin-right: 7rem;
+  }
+
+  .tentang {
+    width: 500px;
+  }
+}
+
+/* Mobile Phone */
+@media (max-width: 450px) {
+  .search-box input {
+    width: 75%;
+  }
+
+  .search-box button {
+    margin-right: 4rem;
+  }
+
+  .tentang {
+    margin-top: 15rem;
+    width: 300px;
+  }
+}
