@@ -19,6 +19,7 @@ function register($data)
     $username = mysqli_real_escape_string($conn, strtolower(trim($data["username"])));
     $nama_lengkap = mysqli_real_escape_string($conn, trim($data["nama_lengkap"]));
     $email = mysqli_real_escape_string($conn, strtolower(trim($data["email"])));
+    $phone = mysqli_real_escape_string($conn, trim($data["phone"]));
     $password = mysqli_real_escape_string($conn, $data["password"]);
     $password1 = mysqli_real_escape_string($conn, $data["password1"]);
 
@@ -41,6 +42,10 @@ function register($data)
     }
     if (empty($email) || !filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $_SESSION["error"] = "Email tidak valid!";
+        return false;
+    }
+    if (empty($phone) || !preg_match("/^[0-9]{10,15}$/", $phone)) {
+        $_SESSION["error"] = "Nomor HP harus berisi 10-15 digit angka!";
         return false;
     }
     if (empty($password) || strlen($password) < 6) {
@@ -76,15 +81,28 @@ function register($data)
     }
     mysqli_stmt_close($stmt);
 
+    // Cek apakah nomor HP sudah ada
+    $stmt = mysqli_prepare($conn, "SELECT phone FROM users WHERE phone = ?");
+    mysqli_stmt_bind_param($stmt, "s", $phone);
+    mysqli_stmt_execute($stmt);
+    mysqli_stmt_store_result($stmt);
+    if (mysqli_stmt_num_rows($stmt) > 0) {
+        $_SESSION["error"] = "Nomor HP sudah terdaftar!";
+        mysqli_stmt_close($stmt);
+        return false;
+    }
+    mysqli_stmt_close($stmt);
+
     // Enkripsi password
     $hashedPassword = password_hash($password, PASSWORD_DEFAULT);
-    $foto_profil = 'default.jpg'; // Foto default
+    $foto_profil = 'default.png'; // Foto default
 
     // **Simpan data sementara di SESSION untuk pilih role nanti**
     $_SESSION["temp_user"] = [
         "username" => $username,
         "nama_lengkap" => $nama_lengkap,
         "email" => $email,
+        "phone" => $phone,
         "password" => $hashedPassword, // Pastikan sudah di-hash sebelum masuk session
         "foto_profil" => $foto_profil
     ];
@@ -93,3 +111,4 @@ function register($data)
     $_SESSION["success"] = "Registrasi berhasil! Silakan pilih peran Anda.";
     return true;
 }
+?>
