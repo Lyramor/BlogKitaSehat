@@ -356,7 +356,7 @@
 
     // Menghilangkan alert setelah 3 detik
     setTimeout(function() {
-        let successAlert = document.getElementById("alertSuccess");
+        let successAlert = document.ElementByIdget("alertSuccess");
         let errorAlert = document.getElementById("alertError");
 
         if (successAlert) {

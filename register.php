@@ -2,26 +2,27 @@
 session_start();
 require 'inc/koneksi.php';
 require 'inc/functions.php';
+require 'inc/log_functions.php'; // Include log functions
 
 if (isset($_POST["register"])) {
     if (register($_POST) > 0) {
-        $_SESSION["temp_user"] = [
-            "username" => $_POST["username"],
-            "nama_lengkap" => $_POST["nama_lengkap"],
-            "email" => $_POST["email"],
-            "phone" => $_POST["phone"], 
-            "password" => password_hash($_POST["password"], PASSWORD_DEFAULT),
-            "foto_profil" => "default.png"
-        ];
-        $_SESSION["success"] = "Registrasi berhasil! Silakan pilih peran Anda.";
+        // Tambahkan phone ke temp_user yang sudah ada di session
+        $_SESSION["temp_user"]["phone"] = $_POST["phone"];
+        
+        // Log aktivitas registrasi berhasil (tahap 1)
+        catat_log($conn, "Registrasi tahap 1 berhasil - Username: " . $_POST["username"], 'success', null, $_POST["username"], "Email: " . $_POST["email"] . ", Phone: " . $_POST["phone"]);
+        
+        // Success message sudah di-set di dalam function register()
     } else {
-        $_SESSION["error"] = "Registrasi gagal! Silakan coba lagi.";
+        // Log aktivitas registrasi gagal
+        catat_log($conn, "Registrasi gagal - Username: " . $_POST["username"], 'failed', null, $_POST["username"], "Error: " . ($_SESSION["error"] ?? "Unknown error"));
     }
 }
 
 // Jika role dipilih, simpan user ke database
 if (isset($_POST["role"])) {
     if (!isset($_SESSION['temp_user'])) {
+        catat_log($conn, "Akses tidak valid - data registrasi tidak ditemukan", 'failed');
         $_SESSION["error"] = "Data registrasi tidak ditemukan!";
     } else {
         $data = $_SESSION['temp_user'];
@@ -45,16 +46,23 @@ if (isset($_POST["role"])) {
             );
 
             if (mysqli_stmt_execute($stmt)) {
+                // Log aktivitas registrasi selesai
+                catat_log($conn, "Registrasi selesai - Role: $role", 'success', null, $data['username'], "Akun berhasil dibuat dengan role: $role");
+                
                 unset($_SESSION['temp_user']); 
                 $_SESSION["success_final"] = "Akun berhasil dibuat sebagai $role! Silakan login.";
                 header("Location: login.php");
                 exit;
             } else {
+                // Log error database
+                catat_log($conn, "Error database saat registrasi", 'failed', null, $data['username'], "Error: " . mysqli_error($conn));
                 $_SESSION["error"] = "Gagal menyimpan data: " . mysqli_error($conn);
             }
             
             mysqli_stmt_close($stmt);
         } else {
+            // Log error prepare statement
+            catat_log($conn, "Error prepare statement registrasi", 'failed', null, $data['username'], "Error: " . mysqli_error($conn));
             $_SESSION["error"] = "Gagal mempersiapkan query: " . mysqli_error($conn);
         }
     }
